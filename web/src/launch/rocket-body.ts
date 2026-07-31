@@ -34,7 +34,7 @@ const ENGINE_THRUST = 18000
 
 export class FlightRocket {
   readonly parts: FlightPartState[]
-  readonly bounds: RocketBounds
+  bounds: RocketBounds
 
   constructor(parts: PartInstance[]) {
     this.parts = parts
@@ -75,7 +75,9 @@ export class FlightRocket {
   }
 
   hasParachuteDeployed(): boolean {
-    return this.parts.some((p) => p.typeId === 'parachute' && p.parachuteDeployed)
+    return this.parts.some(
+      (p) => p.typeId === 'parachute' && p.parachuteDeployed && !p.detached,
+    )
   }
 
   applyStageAction(partId: string): void {
@@ -96,19 +98,39 @@ export class FlightRocket {
     }
   }
 
+  recomputeBounds(): void {
+    this.bounds = this.computeBounds()
+  }
+
   private computeBounds(): RocketBounds {
     let minX = Infinity
     let minY = Infinity
     let maxX = -Infinity
     let maxY = -Infinity
+    let hasPart = false
 
     for (const part of this.parts) {
+      if (part.detached) continue
+      hasPart = true
       const def = getPartDefinition(part.typeId)
       const h = part.ringSpan ?? def.height
       minX = Math.min(minX, part.x)
       minY = Math.min(minY, part.y)
       maxX = Math.max(maxX, part.x + def.width)
       maxY = Math.max(maxY, part.y + h)
+    }
+
+    if (!hasPart) {
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: 0,
+        maxY: 0,
+        width: 0,
+        height: 0,
+        centerX: 0,
+        bottomY: 0,
+      }
     }
 
     return {

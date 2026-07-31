@@ -5,6 +5,7 @@ import type { PartInstance } from '../parts/types'
 import {
   createInitialFlightState,
   updateFlight,
+  PX_PER_METER,
   type FlightState,
 } from './flight-physics'
 import {
@@ -20,7 +21,19 @@ import {
   landingMessage,
   type LandingResult,
 } from './landing'
-import { PX_PER_METER } from './flight-physics'
+import {
+  atmosphereZone,
+  gravityAtAltitude,
+  KARMAN_LINE_KM,
+  zoneLabel,
+} from './atmosphere'
+import {
+  collectPartsBelowConnector,
+  createFloatingStage,
+  updateFloatingStage,
+  type FloatingStage,
+} from './stage-separation'
+import type { LaunchStage } from '../assembly/launch-sequence'
 
 const WORLD_PAD_Y = 0
 const WORLD_PAD_X = 0
@@ -56,6 +69,7 @@ export class LaunchScene {
   private maxAltM = 0
   private prevGrounded = true
   private landingResult: LandingResult = 'none'
+  private floatingStages: FloatingStage[] = []
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -139,6 +153,7 @@ export class LaunchScene {
         return
       }
       this.stageRunner.executeStage(next, this.rocket)
+      this.handleStageSeparation(next)
       this.showStatus(`执行启动级 ${next.number}`)
       this.updateSequenceReadout(sequencePanel)
     })
@@ -269,6 +284,9 @@ export class LaunchScene {
       this.launchState.getStages(),
     )
 
+    const altM = altitudeMeters(this.flight, WORLD_PAD_Y, PX_PER_METER)
+    const altKm = altM / 1000
+
     updateFlight(this.flight, this.rocket, dt, {
       throttle: this.throttle,
       engineOn: this.engineOn,
@@ -276,11 +294,16 @@ export class LaunchScene {
       tiltLeft: this.tiltLeft,
       tiltRight: this.tiltRight,
       grounded: grounded && this.flight.vy <= 0.01,
+      altKm,
     })
+
+    const grav = gravityAtAltitude(altKm)
+    for (const stage of this.floatingStages) {
+      updateFloatingStage(stage, dt, grav)
+    }
 
     if (this.statusTimer > 0) this.statusTimer -= dt
 
-    const altM = altitudeMeters(this.flight, WORLD_PAD_Y, PX_PER_METER)
     this.maxAltM = Math.max(this.maxAltM, altM)
 
     if (grounded && !this.prevGrounded && this.landingResult === 'none') {
@@ -306,11 +329,44 @@ export class LaunchScene {
       this.updateSequenceReadout(this.sequencePanel)
     }
 
-    this.draw(width, height)
+    this.draw(width, height, altKm)
     this.rafId = requestAnimationFrame(() => this.loop())
   }
 
-  private draw(width: number, height: number): void {
+  private handleStageSeparation(stage: LaunchStage): void {
+    const connectorTypes = new Set(['ring-connector', 'radial-connector'])
+
+    for (const partId of stage.targetPartIds) {
+      const connector = this.rocket.getPart(partId)
+      if (!connector || !connectorTypes.has(connector.typeId) || !connector.connectorOpen) {
+        continue
+      }
+
+      const below = collectPartsBelowConnector(connector, this.rocket.parts)
+      if (below.length === 0) continue
+
+      for (const p of below) p.detached = true
+
+      const { centerX, bottomY } = this.rocket.bounds
+      this.floatingStages.push(
+        createFloatingStage(
+          below,
+          this.flight.x,
+          this.flight.y,
+          this.flight.vx,
+          this.flight.vy,
+          this.flight.angle,
+          centerX,
+          bottomY,
+        ),
+      )
+      this.showStatus('级间分离', 2.5)
+    }
+
+    this.rocket.recomputeBounds()
+  }
+
+  private draw(width: number, height: number, altKm: number): void {
     if (this.viewMode === 'map') {
       drawMapView(
         this.ctx,
@@ -338,6 +394,10 @@ export class LaunchScene {
     this.drawEarth()
     this.drawLaunchPad()
 
+    for (const fs of this.floatingStages) {
+      this.drawFloatingStage(fs)
+    }
+
     this.ctx.save()
     this.ctx.translate(this.flight.x, this.flight.y)
     this.ctx.rotate(this.flight.angle)
@@ -347,6 +407,9 @@ export class LaunchScene {
       if (part.detached || part.envelopedBy) continue
       const instance: PartInstance = part
       drawPart(this.ctx, instance, false, { ringSpan: part.ringSpan })
+      if (part.connectorOpen && (part.typeId === 'ring-connector' || part.typeId === 'radial-connector')) {
+        this.drawOpenConnector(part)
+      }
       if (part.ignited && part.typeId === 'engine' && this.engineOn && this.throttle > 0) {
         this.drawEngineFlame(part)
       }
@@ -358,6 +421,7 @@ export class LaunchScene {
     this.ctx.restore()
     this.ctx.restore()
 
+    this.drawFlightHud(width, height, altKm)
     this.drawLandingOverlay(width, height)
 
     if (this.statusTimer > 0 && this.statusMessage) {
@@ -423,6 +487,78 @@ export class LaunchScene {
     this.ctx.lineTo(fx + 8, fy)
     this.ctx.closePath()
     this.ctx.fill()
+  }
+
+  private drawFloatingStage(fs: FloatingStage): void {
+    let minX = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const part of fs.parts) {
+      const def = getPartDefinition(part.typeId)
+      const h = part.ringSpan ?? def.height
+      minX = Math.min(minX, part.x)
+      maxX = Math.max(maxX, part.x + def.width)
+      maxY = Math.max(maxY, part.y + h)
+    }
+    const centerX = (minX + maxX) / 2
+    const bottomY = maxY
+
+    this.ctx.save()
+    this.ctx.translate(fs.x, fs.y)
+    this.ctx.rotate(fs.angle)
+    this.ctx.translate(-centerX, -bottomY)
+
+    for (const part of fs.parts) {
+      drawPart(this.ctx, part, false, { ringSpan: part.ringSpan })
+    }
+    this.ctx.restore()
+  }
+
+  private drawOpenConnector(part: import('./rocket-body').FlightPartState): void {
+    const def = getPartDefinition(part.typeId)
+    const h = part.ringSpan ?? def.height
+
+    const gap = 6
+
+    this.ctx.strokeStyle = 'rgba(255, 210, 60, 0.9)'
+    this.ctx.lineWidth = 2
+    this.ctx.setLineDash([4, 3])
+    this.ctx.beginPath()
+    this.ctx.moveTo(part.x, part.y + h * 0.5 - gap)
+    this.ctx.lineTo(part.x + def.width, part.y + h * 0.5 - gap)
+    this.ctx.moveTo(part.x, part.y + h * 0.5 + gap)
+    this.ctx.lineTo(part.x + def.width, part.y + h * 0.5 + gap)
+    this.ctx.stroke()
+    this.ctx.setLineDash([])
+  }
+
+  private drawFlightHud(_width: number, height: number, altKm: number): void {
+    const zone = atmosphereZone(altKm)
+    const speed = Math.hypot(this.flight.vx, this.flight.vy)
+
+    this.ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    this.ctx.fillRect(10, 10, 148, 62)
+    this.ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+    this.ctx.lineWidth = 1
+    this.ctx.strokeRect(10, 10, 148, 62)
+
+    this.ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    this.ctx.font = '11px system-ui'
+    this.ctx.textAlign = 'left'
+    this.ctx.fillText(`高度 ${altKm.toFixed(2)} km`, 18, 28)
+    this.ctx.fillText(`速度 ${speed.toFixed(1)} m/s`, 18, 44)
+    this.ctx.fillText(`区域 ${zoneLabel(zone)}`, 18, 60)
+
+    if (altKm >= KARMAN_LINE_KM * 0.8) {
+      const nearKarman = altKm >= KARMAN_LINE_KM
+      this.ctx.fillStyle = nearKarman ? 'rgba(80, 200, 255, 0.9)' : 'rgba(255, 210, 60, 0.9)'
+      this.ctx.font = 'bold 11px system-ui'
+      this.ctx.fillText(
+        nearKarman ? '✦ 已进入太空（卡门线）' : `接近卡门线 ${KARMAN_LINE_KM} km`,
+        10,
+        height - 14,
+      )
+    }
   }
 
   private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {
