@@ -93,11 +93,12 @@ export class AssemblyState {
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const part = this.parts[i]!
       const def = getPartDefinition(part.typeId)
+      const h = part.ringSpan ?? def.height
       if (
         point.x >= part.x &&
         point.x <= part.x + def.width &&
         point.y >= part.y &&
-        point.y <= part.y + def.height
+        point.y <= part.y + h
       ) {
         return part
       }
@@ -129,11 +130,12 @@ export class AssemblyState {
       if (this.symmetryEnabled && part.mirrorOf) continue
       if (part.envelopedBy) continue
       const def = getPartDefinition(part.typeId)
+      const h = part.ringSpan ?? def.height
       if (
         point.x >= part.x &&
         point.x <= part.x + def.width &&
         point.y >= part.y &&
-        point.y <= part.y + def.height
+        point.y <= part.y + h
       ) {
         return part
       }

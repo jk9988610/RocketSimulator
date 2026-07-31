@@ -49,8 +49,8 @@ body {
 .parts-panel {
   display: flex;
   flex-direction: column;
-  width: clamp(96px, 20vw, 160px);
-  min-width: 96px;
+  width: clamp(148px, 26vw, 220px);
+  min-width: 148px;
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
 }
@@ -81,9 +81,9 @@ body {
 .parts-inventory {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   gap: 8px;
-  padding: 8px 6px 12px 8px;
+  padding: 8px 10px 12px;
   overflow-y: auto;
   flex: 1;
   -webkit-overflow-scrolling: touch;
@@ -118,9 +118,9 @@ body {
 .inventory-item {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  width: calc(100% - 40px);
-  max-width: 108px;
+  align-items: center;
+  width: calc(100% - 16px);
+  max-width: 168px;
   padding: 6px 5px 8px;
   border: 1px solid var(--panel-border);
   border-radius: 8px;
@@ -151,14 +151,14 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
-  text-align: left;
+  text-align: center;
   line-height: 1.2;
 }
 
 .inventory-item__preview {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   width: 100%;
   min-height: 0;
 }
@@ -619,7 +619,8 @@ body.is-dragging-part .parts-inventory {
   position: absolute;
   top: 10px;
   left: 12px;
-  z-index: 20;
+  z-index: 30;
+  pointer-events: auto;
 }
 
 .menu-btn {

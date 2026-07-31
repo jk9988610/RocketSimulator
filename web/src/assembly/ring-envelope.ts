@@ -9,6 +9,11 @@ function partCenterX(part: PartInstance): number {
   return part.x + def.width / 2
 }
 
+function partBottom(part: PartInstance): number {
+  const def = getPartDefinition(part.typeId)
+  return part.y + def.height
+}
+
 function partsOverlapColumn(a: PartInstance, b: PartInstance): boolean {
   const da = getPartDefinition(a.typeId)
   const db = getPartDefinition(b.typeId)
@@ -43,35 +48,24 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
     if (envelopable.length === 0) continue
 
     const envTop = Math.min(...envelopable.map((p) => p.y))
-    const envBottom = Math.max(
-      ...envelopable.map((p) => p.y + getPartDefinition(p.typeId).height),
-    )
+    const envBottom = Math.max(...envelopable.map((p) => partBottom(p)))
 
-    let topAnchor: PartInstance | null = null
-    let bottomAnchor: PartInstance | null = null
-
-    for (const p of column) {
-      if (!ANCHOR_TYPES.has(p.typeId)) continue
-      const def = getPartDefinition(p.typeId)
-      const bottom = p.y + def.height
-      if (bottom <= envTop + 2 && (!topAnchor || bottom > topAnchor.y + getPartDefinition(topAnchor.typeId).height)) {
-        topAnchor = p
-      }
-      if (p.y >= envBottom - 2 && (!bottomAnchor || p.y < bottomAnchor.y)) {
-        bottomAnchor = p
+    let spanTop = envTop
+    const anchors = column.filter((p) => ANCHOR_TYPES.has(p.typeId))
+    for (const anchor of anchors) {
+      const bottom = partBottom(anchor)
+      if (bottom <= envTop + 2) {
+        spanTop = Math.min(spanTop, bottom)
       }
     }
 
-    if (!topAnchor || !bottomAnchor) continue
-
-    const topDef = getPartDefinition(topAnchor.typeId)
-    const spanTop = topAnchor.y + topDef.height
-    const spanBottom = bottomAnchor.y
+    const spanBottom = envBottom
     const span = spanBottom - spanTop
-    if (span < getPartDefinition('ring-connector').height) continue
-
     const ringDef = getPartDefinition(ring.typeId)
-    ring.x = partCenterX(topAnchor) - ringDef.width / 2
+    if (span < ringDef.height) continue
+
+    const ref = anchors.find((a) => partBottom(a) <= envTop + 2) ?? envelopable[0]!
+    ring.x = partCenterX(ref) - ringDef.width / 2
     ring.y = spanTop
     ring.ringSpan = span
 
