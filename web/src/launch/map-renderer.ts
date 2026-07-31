@@ -8,14 +8,53 @@ import {
 } from './cosmos-scale'
 import type { OrbitTracker } from './orbit-tracker'
 import type { FlightState } from './flight-physics'
-import { altitudeAboveEarthKm, distanceToMoonKm } from './orbit-mechanics'
 
 type ViewMode = 'live' | 'map'
+
+export type MapFocusTarget = 'earth' | 'rocket' | 'free'
 
 export interface MapViewState {
   zoom: number
   panX: number
   panY: number
+}
+
+export interface MapLayout {
+  earthX: number
+  earthY: number
+  rocketMapX: number
+  rocketMapY: number
+}
+
+export function computeMapLayout(
+  tracker: OrbitTracker,
+  flight: FlightState,
+  padCenterX: number,
+  padSurfaceY: number,
+  zoom: number,
+  timeMs = Date.now(),
+): MapLayout {
+  const earthOrbitR = kmToMapPx(AU_KM, zoom)
+  const earthAngle = timeMs / 20000
+  const earthX = Math.cos(earthAngle) * earthOrbitR
+  const earthY = Math.sin(earthAngle) * earthOrbitR
+  const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY, zoom)
+  return {
+    earthX,
+    earthY,
+    rocketMapX: earthX + rocket.mapX,
+    rocketMapY: earthY + rocket.mapY,
+  }
+}
+
+export function panToFocusTarget(
+  layout: MapLayout,
+  target: 'earth' | 'rocket',
+  zoom: number,
+): { panX: number; panY: number } {
+  const focusX = target === 'earth' ? layout.earthX : layout.rocketMapX
+  const focusY = target === 'earth' ? layout.earthY : layout.rocketMapY
+  return { panX: -focusX * zoom, panY: -focusY * zoom }
 }
 
 export function drawMapView(
@@ -42,10 +81,9 @@ export function drawMapView(
   ctx.translate(cx, cy)
   ctx.scale(zoom, zoom)
 
+  const layout = computeMapLayout(tracker, flight, padCenterX, padSurfaceY, zoom)
+  const { earthX, earthY } = layout
   const earthOrbitR = kmToMapPx(AU_KM, zoom)
-  const earthAngle = Date.now() / 20000
-  const earthX = Math.cos(earthAngle) * earthOrbitR
-  const earthY = Math.sin(earthAngle) * earthOrbitR
 
   // 太阳（日心）
   ctx.fillStyle = 'rgba(255, 200, 60, 0.12)'
@@ -61,8 +99,8 @@ export function drawMapView(
   ctx.textAlign = 'left'
   ctx.fillText('太阳', Math.max(12, kmToMapPx(SUN_RADIUS_KM, zoom)) + 4, 4)
 
-  ctx.strokeStyle = 'rgba(100, 160, 220, 0.15)'
-  ctx.lineWidth = 1 / zoom
+  ctx.strokeStyle = 'rgba(100, 160, 220, 0.45)'
+  ctx.lineWidth = 3 / zoom
   ctx.beginPath()
   ctx.arc(0, 0, earthOrbitR, 0, Math.PI * 2)
   ctx.stroke()
@@ -71,7 +109,8 @@ export function drawMapView(
   ctx.translate(earthX, earthY)
 
   const moonOrbitR = kmToMapPx(MOON_ORBIT_KM, zoom)
-  ctx.strokeStyle = 'rgba(200, 200, 220, 0.25)'
+  ctx.strokeStyle = 'rgba(200, 200, 220, 0.5)'
+  ctx.lineWidth = 2.5 / zoom
   ctx.beginPath()
   ctx.arc(0, 0, moonOrbitR, 0, Math.PI * 2)
   ctx.stroke()
@@ -144,23 +183,10 @@ export function drawMapView(
   ctx.restore()
   ctx.restore()
 
-  const altKm = altitudeAboveEarthKm(flight)
-  const moonKm = distanceToMoonKm(flight)
-  const speed = Math.hypot(flight.vx, flight.vy)
-
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'
-  ctx.fillRect(10, 10, 200, 72)
-  ctx.fillStyle = 'rgba(255,255,255,0.88)'
-  ctx.font = '11px system-ui'
-  ctx.textAlign = 'left'
-  ctx.fillText(`高度 ${altKm.toFixed(1)} km`, 18, 28)
-  ctx.fillText(`速度 ${speed.toFixed(1)} m/s`, 18, 44)
-  ctx.fillText(`距月球 ${moonKm.toFixed(0)} km`, 18, 60)
-  ctx.fillText(`地图缩放 ${zoom.toFixed(1)}×`, 18, 76)
-
   ctx.fillStyle = 'rgba(255,255,255,0.45)'
   ctx.font = '10px system-ui'
-  ctx.fillText('滚轮/双指缩放 · 拖拽平移', 10, height - 10)
+  ctx.textAlign = 'left'
+  ctx.fillText(`地图缩放 ${zoom.toFixed(1)}× · 滚轮/双指缩放 · 拖拽平移`, 10, height - 10)
 }
 
 function drawOrbitMarker(

@@ -83,20 +83,51 @@ export function distanceToMoonKm(flight: FlightState): number {
   return Math.hypot(pos.x - mx, pos.y - my) / 1000
 }
 
+export interface HudReadout {
+  speedMs: number
+  distanceLabel: '距地面' | '距月面'
+  distanceKm: number
+}
+
+/** 仪表盘：单一距离读数，按位置自动切换地面/月面参考 */
+export function resolveHudReadout(flight: FlightState, grounded: boolean): HudReadout {
+  const speedMs = Math.hypot(flight.vx, flight.vy)
+  const altEarth = altitudeAboveEarthKm(flight)
+  const moonCenterKm = distanceToMoonKm(flight)
+  const moonSurfaceKm = Math.max(0, moonCenterKm - CELESTIAL.moon.radiusKm)
+
+  const pos = positionFromEarthCenterM(flight)
+  const earthCenterKm = Math.hypot(pos.x, pos.y) / 1000
+
+  const useMoon =
+    moonCenterKm < earthCenterKm &&
+    moonCenterKm < MOON_ORBIT_KM * 0.55 &&
+    altEarth > 50
+
+  if (useMoon) {
+    return { speedMs, distanceLabel: '距月面', distanceKm: moonSurfaceKm }
+  }
+
+  if (grounded && altEarth < 1) {
+    return { speedMs, distanceLabel: '距地面', distanceKm: 0 }
+  }
+
+  return { speedMs, distanceLabel: '距地面', distanceKm: altEarth }
+}
+
 export function resolveSurfaceState(flight: FlightState, grounded: boolean): SurfaceState {
   const altEarth = altitudeAboveEarthKm(flight)
-  const moonDist = distanceToMoonKm(flight)
+  const hud = resolveHudReadout(flight, grounded)
 
   if (grounded && altEarth < 1) {
     return { body: 'earth', label: '地球表面', altKm: 0, surfaceRef: 'earth' }
   }
 
-  if (moonDist < CELESTIAL.moon.radiusKm + 5 && altEarth > 100_000) {
-    const altMoon = moonDist - CELESTIAL.moon.radiusKm
+  if (hud.distanceLabel === '距月面') {
     return {
       body: 'moon',
       label: '月球表面',
-      altKm: Math.max(0, altMoon),
+      altKm: hud.distanceKm,
       surfaceRef: 'moon',
     }
   }
@@ -107,7 +138,7 @@ export function resolveSurfaceState(flight: FlightState, grounded: boolean): Sur
 
   return {
     body: 'earth',
-    label: altEarth < 100 ? '地球大气层' : '太空（地心距）',
+    label: altEarth < 100 ? '地球大气层' : '太空',
     altKm: altEarth,
     surfaceRef: 'space',
   }
