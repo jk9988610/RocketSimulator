@@ -10,6 +10,7 @@ import {
 import { createLayout, setSidePanelMode, type SidePanelMode } from '../ui/layout'
 import { AssemblyCanvas } from '../ui/assembly-canvas'
 import { bindPartsPanelDrag } from '../ui/parts-panel-drag'
+import { initPartsPanelPreviews } from '../ui/parts-panel-preview'
 import { LaunchSequencePanel } from '../ui/launch-sequence-panel'
 
 export function initApp(): void {
@@ -67,6 +68,7 @@ export function initApp(): void {
   })
 
   canvas.start()
+  initPartsPanelPreviews(layout.partsPanel)
   bindPartsPanelDrag(layout.partsPanel, canvas)
   updateLaunchButton()
 

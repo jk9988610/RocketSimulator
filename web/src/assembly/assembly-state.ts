@@ -1,3 +1,4 @@
+import { findSnapPair } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
 import { snapPoint, snapToGrid } from './grid'
@@ -132,9 +133,7 @@ export class AssemblyState {
   }
 
   moveParts(ids: string[], dx: number, dy: number, axisX: number): void {
-    const snappedDx = snapToGrid(dx)
-    const snappedDy = snapToGrid(dy)
-    if (snappedDx === 0 && snappedDy === 0) return
+    if (dx === 0 && dy === 0) return
 
     const idSet = new Set(ids)
     const moved = new Set<string>()
@@ -142,8 +141,8 @@ export class AssemblyState {
     for (const part of this.parts) {
       if (!idSet.has(part.id) || moved.has(part.id)) continue
 
-      part.x += snappedDx
-      part.y += snappedDy
+      part.x += dx
+      part.y += dy
       moved.add(part.id)
 
       if (this.symmetryEnabled) {
@@ -152,6 +151,36 @@ export class AssemblyState {
           this.positionMirror(part, mirror, axisX)
           moved.add(mirror.id)
         }
+      }
+    }
+  }
+
+  finalizeMove(ids: string[], axisX: number): void {
+    const idSet = new Set(
+      ids.filter((id) => {
+        const p = this.getPartById(id)
+        return p && !p.mirrorOf
+      }),
+    )
+
+    for (const part of this.parts) {
+      if (!idSet.has(part.id)) continue
+
+      const others = this.parts.filter(
+        (p) => p.id !== part.id && !idSet.has(p.id),
+      )
+      const pair = findSnapPair(part, others)
+      if (pair) {
+        part.x += pair.dx
+        part.y += pair.dy
+      }
+      const snapped = snapPoint(part.x, part.y)
+      part.x = snapped.x
+      part.y = snapped.y
+
+      if (this.symmetryEnabled) {
+        const mirror = this.getMirror(part)
+        if (mirror) this.positionMirror(part, mirror, axisX)
       }
     }
   }
