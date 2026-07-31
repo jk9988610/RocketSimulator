@@ -129,7 +129,7 @@ function strokePartOutline(
 ): void {
   switch (typeId) {
     case 'command-pod':
-      roundRect(ctx, x, y, w, h, 8)
+      drawCommandPodOutline(ctx, x, y, w, h)
       ctx.stroke()
       break
     case 'parachute':
@@ -164,23 +164,51 @@ function drawCommandPod(
   color: string,
   accent: string,
 ): void {
-  const r = 8
+  const inset = w * 0.14
+  const topY = y + h * 0.16
+
   const grad = ctx.createLinearGradient(x, y, x + w, y + h)
-  grad.addColorStop(0, lighten(color, 12))
+  grad.addColorStop(0, lighten(color, 14))
   grad.addColorStop(1, color)
   ctx.fillStyle = grad
-  roundRect(ctx, x, y, w, h, r)
+
+  ctx.beginPath()
+  ctx.moveTo(x + inset, topY)
+  ctx.lineTo(x + w - inset, topY)
+  ctx.lineTo(x + w - 3, y + h)
+  ctx.lineTo(x + 3, y + h)
+  ctx.closePath()
   ctx.fill()
+
   ctx.strokeStyle = accent
   ctx.lineWidth = 2
-  roundRect(ctx, x, y, w, h, r)
   ctx.stroke()
+
   ctx.fillStyle = accent
   ctx.beginPath()
-  ctx.arc(x + w / 2, y + h * 0.38, 9, 0, Math.PI * 2)
+  ctx.arc(x + w / 2, y + h * 0.52, 9, 0, Math.PI * 2)
   ctx.fill()
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'
-  ctx.fillRect(x + w / 2 - 3, y + h * 0.32, 6, 8)
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'
+  ctx.beginPath()
+  ctx.arc(x + w / 2 - 2, y + h * 0.5 - 2, 3, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawCommandPodOutline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const inset = w * 0.14
+  const topY = y + h * 0.16
+  ctx.beginPath()
+  ctx.moveTo(x + inset, topY)
+  ctx.lineTo(x + w - inset, topY)
+  ctx.lineTo(x + w - 3, y + h)
+  ctx.lineTo(x + 3, y + h)
+  ctx.closePath()
 }
 
 function drawParachute(
@@ -245,16 +273,13 @@ function drawRingConnector(
   color: string,
   accent: string,
 ): void {
+  const barH = Math.max(10, h * 0.55)
+  const barY = y + (h - barH) / 2
   ctx.fillStyle = color
-  ctx.fillRect(x + 2, y + h * 0.28, w - 4, h * 0.44)
+  ctx.fillRect(x + 2, barY, w - 4, barH)
   ctx.strokeStyle = accent
-  ctx.lineWidth = 3
-  ctx.beginPath()
-  ctx.arc(x + w / 2, y + 4, w / 2 - 4, Math.PI, 0)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(x + w / 2, y + h - 4, w / 2 - 4, 0, Math.PI)
-  ctx.stroke()
+  ctx.lineWidth = 2
+  ctx.strokeRect(x + 2, barY, w - 4, barH)
 }
 
 function drawFuelTank(
@@ -290,15 +315,13 @@ function drawRadialConnector(
   color: string,
   accent: string,
 ): void {
-  const barW = 14
-  const midY = y + h / 2
+  const barW = Math.max(12, w * 0.55)
+  const barX = x + (w - barW) / 2
   ctx.fillStyle = color
-  ctx.fillRect(x + w / 2 - barW / 2, y, barW, h)
-  ctx.fillRect(x, midY - barW / 2, w, barW)
+  ctx.fillRect(barX, y + 2, barW, h - 4)
   ctx.strokeStyle = accent
   ctx.lineWidth = 2
-  ctx.strokeRect(x + w / 2 - barW / 2, y, barW, h)
-  ctx.strokeRect(x, midY - barW / 2, w, barW)
+  ctx.strokeRect(barX, y + 2, barW, h - 4)
 }
 
 function drawNoseCone(

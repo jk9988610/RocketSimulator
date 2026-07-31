@@ -31,10 +31,8 @@ const CONNECTORS: Record<PartTypeId, ConnectorDef[]> = {
     { kind: 'bottom', lx: 32, ly: 96 },
   ],
   'radial-connector': [
-    { kind: 'top', lx: 48, ly: 0 },
-    { kind: 'bottom', lx: 48, ly: 48 },
-    { kind: 'left', lx: 0, ly: 24 },
-    { kind: 'right', lx: 96, ly: 24 },
+    { kind: 'top', lx: 16, ly: 0 },
+    { kind: 'bottom', lx: 16, ly: 64 },
   ],
   'nose-cone': [{ kind: 'bottom', lx: 24, ly: 48 }],
   engine: [{ kind: 'top', lx: 32, ly: 0 }],

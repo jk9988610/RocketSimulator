@@ -44,8 +44,8 @@ export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
   'radial-connector': {
     id: 'radial-connector',
     label: '径向连接器',
-    width: 96,
-    height: 48,
+    width: 32,
+    height: 64,
     color: '#606070',
     accent: '#9090a0',
   },
