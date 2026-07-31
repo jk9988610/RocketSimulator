@@ -1,8 +1,12 @@
 import type { FlightRocket } from './rocket-body'
+import {
+  airDensityRatio,
+  atmosphereDragMultiplier,
+  gravityAtAltitude,
+} from './atmosphere'
 
-const GRAVITY = 9.81
 const PX_PER_METER = 32
-const DRAG = 0.02
+const BASE_DRAG = 0.02
 const PARACHUTE_DRAG = 4.2
 const TILT_RATE = 0.8
 
@@ -39,6 +43,7 @@ export function updateFlight(
     tiltLeft: boolean
     tiltRight: boolean
     grounded: boolean
+    altKm: number
   },
 ): void {
   if (options.tiltLeft) state.angle -= TILT_RATE * dt
@@ -46,8 +51,9 @@ export function updateFlight(
   state.angle = clamp(state.angle, -1.2, 1.2)
 
   const mass = Math.max(rocket.getTotalMass(), 1)
+  const gravity = gravityAtAltitude(options.altKm)
   let ax = 0
-  let ay = GRAVITY
+  let ay = gravity
 
   if (options.engineOn) {
     const thrust = rocket.getIgnitedEngineThrust(options.throttle, options.activeEngineIds)
@@ -59,14 +65,20 @@ export function updateFlight(
   }
 
   if (options.grounded) {
-    if (ay >= GRAVITY * 0.98) {
+    if (ay >= gravity * 0.98) {
       state.vy = 0
       state.vx *= 0.92
       return
     }
   } else {
     const speed = Math.hypot(state.vx, state.vy)
-    const dragCoeff = rocket.hasParachuteDeployed() ? PARACHUTE_DRAG : DRAG
+    const parachute = rocket.hasParachuteDeployed()
+    let dragCoeff = parachute ? PARACHUTE_DRAG : BASE_DRAG
+    if (!parachute) {
+      dragCoeff *= atmosphereDragMultiplier(options.altKm)
+    } else {
+      dragCoeff *= 0.5 + airDensityRatio(options.altKm) * 0.5
+    }
     if (speed > 0.01) {
       ax -= (state.vx / speed) * dragCoeff * speed
       ay -= (state.vy / speed) * dragCoeff * speed
