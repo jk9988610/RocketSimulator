@@ -1,7 +1,6 @@
 import { AssemblyState } from '../assembly/assembly-state'
 import { isLaunchTargetType } from '../assembly/launch-sequence'
 import { GRID_SIZE, snapPoint } from '../assembly/grid'
-import { findSnapPair, getConnectorsForPart } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
@@ -333,25 +332,17 @@ export class AssemblyCanvas {
         if (isFloating) continue
 
         const isDragging = this.drag.mode === 'move' && isSelected
-        const isLaunchTarget = this.options.getLaunchTargetIds?.().has(part.id) ?? false
-        const isEligible =
-          this.interactionMode === 'pick-target' && isLaunchTargetType(part.typeId)
 
         drawPart(this.ctx, part, isSelected, {
           showConnectors: isSelected || isDragging,
           highlightConnectors: isDragging,
+          ringSpan: part.ringSpan,
+          physical: true,
         })
-
-        if (isLaunchTarget) {
-          this.drawLaunchTargetBadge(part)
-        }
-        if (isEligible) {
-          this.drawEligibleHighlight(part)
-        }
       }
 
       if (this.drag.mode === 'move' && this.drag.moved) {
-        this.drawSnapPreview()
+        // 仅显示实物，不绘制吸附辅助线
       }
 
       if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition) {
@@ -393,6 +384,7 @@ export class AssemblyCanvas {
         if (pos) {
           drawPart(this.ctx, { ...part, x: pos.x, y: pos.y }, false, {
             ringSpan: part.ringSpan,
+            physical: true,
           })
         }
       }
@@ -433,51 +425,12 @@ export class AssemblyCanvas {
     this.ctx.setLineDash([])
   }
 
-  private drawEligibleHighlight(part: PartInstance): void {
-    const def = getPartDefinition(part.typeId)
-    this.ctx.strokeStyle = 'rgba(255, 210, 60, 0.7)'
-    this.ctx.lineWidth = 2
-    this.ctx.setLineDash([4, 4])
-    this.ctx.strokeRect(part.x - 1, part.y - 1, def.width + 2, def.height + 2)
-    this.ctx.setLineDash([])
-  }
-
-  private drawLaunchTargetBadge(part: PartInstance): void {
-    const def = getPartDefinition(part.typeId)
-    this.ctx.strokeStyle = 'rgba(80, 220, 120, 0.85)'
-    this.ctx.lineWidth = 2
-    this.ctx.strokeRect(part.x - 2, part.y - 2, def.width + 4, def.height + 4)
-  }
-
-  private drawSnapPreview(): void {
-    const selected = this.state.getSelectedParts().filter((p) => !p.mirrorOf)
-    if (selected.length === 0) return
-
-    const anchor = selected[0]!
-    const others = this.state.getParts().filter((p) => !this.state.isSelected(p.id))
-    const pair = findSnapPair(anchor, others)
-    if (!pair) return
-
-    const connectors = getConnectorsForPart(anchor)
-    this.ctx.strokeStyle = 'rgba(80, 220, 120, 0.8)'
-    this.ctx.lineWidth = 2
-    this.ctx.setLineDash([4, 4])
-    for (const c of connectors) {
-      this.ctx.beginPath()
-      this.ctx.moveTo(c.x, c.y)
-      this.ctx.lineTo(c.x + pair.dx, c.y + pair.dy)
-      this.ctx.stroke()
-    }
-    this.ctx.setLineDash([])
-  }
-
   private drawGhost(typeId: PartTypeId, pointer: PointerPosition): void {
     const def = getPartDefinition(typeId)
     const snapped = snapPoint(pointer.x - def.width / 2, pointer.y - def.height / 2)
     this.ctx.globalAlpha = 0.45
     drawPart(this.ctx, { id: 'ghost', typeId, x: snapped.x, y: snapped.y }, false, {
-      showConnectors: true,
-      highlightConnectors: true,
+      physical: true,
     })
     this.ctx.globalAlpha = 1
   }

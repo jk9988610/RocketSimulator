@@ -1,7 +1,7 @@
 import {
   AU_KM,
   EARTH_RADIUS_KM,
-  kmToMapPx,
+  kmToMapUnits,
   MOON_ORBIT_KM,
   MOON_RADIUS_KM,
   SUN_RADIUS_KM,
@@ -39,15 +39,14 @@ export function computeMapLayout(
   flight: FlightState,
   padCenterX: number,
   padSurfaceY: number,
-  zoom: number,
   simTimeS: number,
 ): MapLayout {
   const helio = computeHeliocentricState(simTimeS)
-  const earthX = kmToMapPx(helio.earth.x, zoom)
-  const earthY = kmToMapPx(helio.earth.y, zoom)
-  const moonX = kmToMapPx(helio.moon.x, zoom)
-  const moonY = kmToMapPx(helio.moon.y, zoom)
-  const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY, zoom)
+  const earthX = kmToMapUnits(helio.earth.x)
+  const earthY = kmToMapUnits(helio.earth.y)
+  const moonX = kmToMapUnits(helio.moon.x)
+  const moonY = kmToMapUnits(helio.moon.y)
+  const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY)
   return {
     sunX: 0,
     sunY: 0,
@@ -128,19 +127,18 @@ export function drawMapView(
     flight,
     padCenterX,
     padSurfaceY,
-    zoom,
     simTimeS,
   )
   const { earthX, earthY } = layout
-  const earthOrbitR = kmToMapPx(AU_KM, zoom)
+  const earthOrbitR = kmToMapUnits(AU_KM)
 
-  drawRotatingBody(ctx, 0, 0, Math.max(8, kmToMapPx(SUN_RADIUS_KM, zoom)), layout.sunRotation, zoom, {
+  drawRotatingBody(ctx, 0, 0, Math.max(8, kmToMapUnits(SUN_RADIUS_KM)), layout.sunRotation, zoom, {
     fill: '#ffd54a',
     glow: 'rgba(255, 200, 60, 0.12)',
-    glowRadius: kmToMapPx(SUN_RADIUS_KM, zoom),
+    glowRadius: kmToMapUnits(SUN_RADIUS_KM),
     marker: '#ffb300',
     label: '太阳',
-    labelOffset: { x: Math.max(12, kmToMapPx(SUN_RADIUS_KM, zoom)) + 4, y: 4 },
+    labelOffset: { x: Math.max(12, kmToMapUnits(SUN_RADIUS_KM)) + 4, y: 4 },
     labelAlign: 'left' as CanvasTextAlign,
   })
 
@@ -150,14 +148,14 @@ export function drawMapView(
   ctx.arc(0, 0, earthOrbitR, 0, Math.PI * 2)
   ctx.stroke()
 
-  const moonOrbitR = kmToMapPx(MOON_ORBIT_KM, zoom)
+  const moonOrbitR = kmToMapUnits(MOON_ORBIT_KM)
   ctx.strokeStyle = 'rgba(200, 200, 220, 0.5)'
   ctx.lineWidth = 2.5 / zoom
   ctx.beginPath()
   ctx.arc(earthX, earthY, moonOrbitR, 0, Math.PI * 2)
   ctx.stroke()
 
-  const moonR = Math.max(3, kmToMapPx(MOON_RADIUS_KM, zoom))
+  const moonR = Math.max(3, kmToMapUnits(MOON_RADIUS_KM))
   drawRotatingBody(ctx, layout.moonX, layout.moonY, moonR, layout.moonRotation, zoom, {
     fill: '#b8b8c8',
     marker: '#8888a0',
@@ -169,7 +167,7 @@ export function drawMapView(
   ctx.save()
   ctx.translate(earthX, earthY)
 
-  const earthR = kmToMapPx(EARTH_RADIUS_KM, zoom)
+  const earthR = kmToMapUnits(EARTH_RADIUS_KM)
   drawRotatingBody(ctx, 0, 0, earthR, layout.earthRotation, zoom, {
     fill: '#1b4332',
     stroke: '#40916c',
@@ -189,20 +187,20 @@ export function drawMapView(
       const s = samples[i]!
       const rKm = EARTH_RADIUS_KM + s.altKm
       const theta = Math.atan2(s.horizKm, rKm)
-      const x = kmToMapPx(rKm * Math.sin(theta), zoom)
-      const y = -kmToMapPx(rKm * Math.cos(theta), zoom)
+      const x = kmToMapUnits(rKm * Math.sin(theta))
+      const y = -kmToMapUnits(rKm * Math.cos(theta))
       if (i === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     }
     ctx.stroke()
   }
 
-  const apo = tracker.getApoapsis(zoom)
-  const peri = tracker.getPeriapsis(zoom, flight)
+  const apo = tracker.getApoapsis()
+  const peri = tracker.getPeriapsis(flight)
   if (apo) drawOrbitMarker(ctx, apo, zoom)
   if (peri) drawOrbitMarker(ctx, peri, zoom)
 
-  const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY, zoom)
+  const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY)
   const tipAngle = flightAngle - Math.PI / 2
   ctx.fillStyle = '#3b9eff'
   ctx.beginPath()
@@ -225,7 +223,7 @@ export function drawMapView(
   ctx.fillStyle = 'rgba(255,255,255,0.45)'
   ctx.font = '10px system-ui'
   ctx.textAlign = 'left'
-  ctx.fillText(`地图缩放 ${zoom.toFixed(1)}× · 滚轮/双指缩放 · 拖拽平移`, 10, height - 10)
+  ctx.fillText(`地图缩放 ${zoom.toFixed(1)}× · 滚轮/双指智能缩放 · 自动追踪目标`, 10, height - 10)
 }
 
 interface BodyDrawStyle {

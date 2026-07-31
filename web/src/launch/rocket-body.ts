@@ -98,17 +98,19 @@ export class FlightRocket {
   consumeFuel(dt: number, throttle: number, engineCount: number): void {
     if (engineCount <= 0 || throttle <= 0) return
     const need = FUEL_BURN_RATE * throttle * engineCount * dt
-    let remaining = need
 
-    const tanks = this.parts
-      .filter((p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0)
-      .sort((a, b) => b.y - a.y)
+    const tanks = this.parts.filter(
+      (p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0,
+    )
+    if (tanks.length === 0) return
 
+    const totalFuel = tanks.reduce((sum, t) => sum + (t.fuel ?? 0), 0)
+    if (totalFuel <= 0) return
+
+    const takeTotal = Math.min(need, totalFuel)
     for (const tank of tanks) {
-      if (remaining <= 0) break
-      const take = Math.min(tank.fuel ?? 0, remaining)
-      tank.fuel = (tank.fuel ?? 0) - take
-      remaining -= take
+      const fraction = (tank.fuel ?? 0) / totalFuel
+      tank.fuel = Math.max(0, (tank.fuel ?? 0) - takeTotal * fraction)
     }
   }
 
