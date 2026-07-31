@@ -1,46 +1,57 @@
 import { PX_PER_METER } from './flight-physics'
 import type { FlightState } from './flight-physics'
+import { EARTH_RADIUS_KM, kmToMapPx } from './cosmos-scale'
+import { altitudeAboveEarthKm, computeOrbitalElements } from './orbit-mechanics'
 
 export interface OrbitSample {
-  mapX: number
-  mapY: number
+  horizKm: number
   altKm: number
 }
 
-const EARTH_MAP_RADIUS = 52
-const ALT_SCALE = 6
+export interface OrbitApsis {
+  mapX: number
+  mapY: number
+  altKm: number
+  label: '近点' | '远点'
+}
+
+const EARTH_MAP_RADIUS = 40
+
+function sampleToMap(sample: OrbitSample, zoom: number): { x: number; y: number } {
+  const rKm = EARTH_RADIUS_KM + sample.altKm
+  const theta = Math.atan2(sample.horizKm, rKm)
+  return {
+    x: kmToMapPx(rKm * Math.sin(theta), zoom),
+    y: -kmToMapPx(rKm * Math.cos(theta), zoom),
+  }
+}
 
 export class OrbitTracker {
   private samples: OrbitSample[] = []
+  private lastElements: ReturnType<typeof computeOrbitalElements> = null
 
   reset(): void {
     this.samples = []
+    this.lastElements = null
   }
 
-  record(
-    flight: FlightState,
-    padCenterX: number,
-    padSurfaceY: number,
-  ): void {
-    const altKm = Math.max(0, (padSurfaceY - flight.y) / PX_PER_METER / 1000)
+  record(flight: FlightState, _padX: number, _padY: number): void {
+    const altKm = altitudeAboveEarthKm(flight)
     if (altKm < 0.02) return
 
-    const horizKm = (flight.x - padCenterX) / PX_PER_METER / 1000
-    const r = EARTH_MAP_RADIUS + altKm * ALT_SCALE
-    const angle = Math.atan2(horizKm, altKm + 0.001) - Math.PI / 2
-    const mapX = Math.cos(angle) * r
-    const mapY = Math.sin(angle) * r
-
+    const horizKm = flight.x / PX_PER_METER / 1000
     const last = this.samples[this.samples.length - 1]
-    if (last) {
-      const dist = Math.hypot(mapX - last.mapX, mapY - last.mapY)
-      if (dist < 2) return
-    }
+    if (last && Math.hypot(horizKm - last.horizKm, altKm - last.altKm) < 0.05) return
 
-    this.samples.push({ mapX, mapY, altKm })
-    if (this.samples.length > 800) {
-      this.samples.shift()
-    }
+    this.samples.push({ horizKm, altKm })
+    if (this.samples.length > 1200) this.samples.shift()
+    this.lastElements = computeOrbitalElements(flight)
+  }
+
+  flightToEarthLocal(flight: FlightState, zoom: number): { x: number; y: number } {
+    const altKm = altitudeAboveEarthKm(flight)
+    const horizKm = flight.x / PX_PER_METER / 1000
+    return sampleToMap({ horizKm, altKm }, zoom)
   }
 
   getSamples(): readonly OrbitSample[] {
@@ -49,29 +60,55 @@ export class OrbitTracker {
 
   getRocketMapPosition(
     flight: FlightState,
-    padCenterX: number,
-    padSurfaceY: number,
-  ): OrbitSample {
-    const altKm = Math.max(0, (padSurfaceY - flight.y) / PX_PER_METER / 1000)
-    const horizKm = (flight.x - padCenterX) / PX_PER_METER / 1000
-    const r = EARTH_MAP_RADIUS + altKm * ALT_SCALE
-    const angle = Math.atan2(horizKm, altKm + 0.001) - Math.PI / 2
+    _padX: number,
+    _padY: number,
+    zoom = 1,
+  ): OrbitSample & { mapX: number; mapY: number } {
+    const altKm = altitudeAboveEarthKm(flight)
+    const horizKm = flight.x / PX_PER_METER / 1000
+    const pos = sampleToMap({ horizKm, altKm }, zoom)
+    return { horizKm, altKm, mapX: pos.x, mapY: pos.y }
+  }
+
+  getApoapsis(zoom = 1): OrbitApsis | null {
+    const el = this.lastElements
+    if (!el || el.isEscape || !Number.isFinite(el.apoapsisKm) || el.apoapsisKm < 0.5) {
+      return null
+    }
+    const rKm = EARTH_RADIUS_KM + el.apoapsisKm
     return {
-      mapX: Math.cos(angle) * r,
-      mapY: Math.sin(angle) * r,
-      altKm,
+      mapX: 0,
+      mapY: -kmToMapPx(rKm, zoom),
+      altKm: el.apoapsisKm,
+      label: '远点',
     }
   }
 
-  getApoapsis(): OrbitSample | null {
-    if (this.samples.length < 3) return null
-    return this.samples.reduce((max, s) => (s.altKm > max.altKm ? s : max))
+  getPeriapsis(zoom = 1, flight?: FlightState): OrbitApsis | null {
+    const el = this.lastElements
+    if (!el || el.periapsisKm < 0.05) return null
+    const rKm = EARTH_RADIUS_KM + el.periapsisKm
+    let angle = 0
+    if (flight) {
+      const horizKm = flight.x / PX_PER_METER / 1000
+      const altKm = altitudeAboveEarthKm(flight)
+      const r = EARTH_RADIUS_KM + altKm
+      angle = Math.atan2(horizKm, r)
+    } else if (this.samples.length > 0) {
+      const s = this.samples[this.samples.length - 1]!
+      const r = EARTH_RADIUS_KM + s.altKm
+      angle = Math.atan2(s.horizKm, r)
+    }
+    return {
+      mapX: kmToMapPx(rKm * Math.sin(angle), zoom),
+      mapY: -kmToMapPx(rKm * Math.cos(angle), zoom),
+      altKm: el.periapsisKm,
+      label: '近点',
+    }
   }
 
-  getPeriapsis(): OrbitSample | null {
-    const airborne = this.samples.filter((s) => s.altKm > 0.05)
-    if (airborne.length < 3) return null
-    return airborne.reduce((min, s) => (s.altKm < min.altKm ? s : min))
+  getOrbitalElements() {
+    return this.lastElements
   }
 }
 

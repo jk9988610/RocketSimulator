@@ -9,6 +9,7 @@ export interface FloatingStage {
   vy: number
   angle: number
   spin: number
+  age: number
 }
 
 function partBottom(part: FlightPartState): number {
@@ -24,7 +25,6 @@ function partsOverlapColumn(a: FlightPartState, b: FlightPartState): boolean {
   return overlap > Math.min(da.width, db.width) * 0.3
 }
 
-/** 获取连接器下方的部件（不含连接器自身） */
 export function collectPartsBelowConnector(
   connector: FlightPartState,
   parts: readonly FlightPartState[],
@@ -55,21 +55,30 @@ export function createFloatingStage(
     minY = Math.min(minY, p.y)
   }
 
+  const separationBoost = 4 + Math.random() * 2
+
   return {
     parts,
-    x: flightX,
-    y: flightY + (minY - boundsBottomY) * 0.3,
-    vx: flightVx + (Math.random() - 0.5) * 2,
-    vy: flightVy + 1.5 + Math.random() * 1.5,
-    angle: flightAngle,
-    spin: (Math.random() - 0.5) * 0.4,
+    x: flightX + (Math.random() - 0.5) * 6,
+    y: flightY + (minY - boundsBottomY) * 0.2,
+    vx: flightVx + (Math.random() - 0.5) * 1.5,
+    vy: flightVy + separationBoost,
+    angle: flightAngle + (Math.random() - 0.5) * 0.15,
+    spin: (Math.random() - 0.5) * 0.6,
+    age: 0,
   }
 }
 
-export function updateFloatingStage(stage: FloatingStage, dt: number, gravity: number): void {
+export function updateFloatingStage(
+  stage: FloatingStage,
+  dt: number,
+  gravity: number,
+): void {
+  stage.age += dt
   stage.vy += gravity * dt
   stage.x += stage.vx * dt * 32
   stage.y += stage.vy * dt * 32
   stage.angle += stage.spin * dt
-  stage.vx *= 1 - 0.08 * dt
+  stage.vx *= 1 - 0.04 * dt
+  stage.vy *= 1 - 0.01 * dt
 }

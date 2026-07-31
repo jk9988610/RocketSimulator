@@ -357,7 +357,48 @@ export class AssemblyCanvas {
       if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition) {
         this.drawGhost(this.drag.partTypeId, this.ghostPosition)
       }
+
+      this.drawSymmetryGhosts()
     })
+  }
+
+  private drawSymmetryGhosts(): void {
+    if (!this.state.symmetryEnabled) return
+    const axisX = this.getAxisX()
+
+    this.ctx.globalAlpha = 0.42
+
+    if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition && this.drag.moved) {
+      const def = getPartDefinition(this.drag.partTypeId)
+      const snapped = snapPoint(
+        this.ghostPosition.x - def.width / 2,
+        this.ghostPosition.y - def.height / 2,
+      )
+      const fake: PartInstance = {
+        id: '_mirror',
+        typeId: this.drag.partTypeId,
+        x: snapped.x,
+        y: snapped.y,
+      }
+      const pos = this.state.getMirrorPreviewPosition(fake, axisX)
+      if (pos) {
+        drawPart(this.ctx, { ...fake, x: pos.x, y: pos.y }, false)
+      }
+    }
+
+    if (this.drag.mode === 'move' && this.drag.moved) {
+      for (const part of this.state.getSelectedParts()) {
+        if (part.mirrorOf || this.state.hasMirror(part.id)) continue
+        const pos = this.state.getMirrorPreviewPosition(part, axisX)
+        if (pos) {
+          drawPart(this.ctx, { ...part, x: pos.x, y: pos.y }, false, {
+            ringSpan: part.ringSpan,
+          })
+        }
+      }
+    }
+
+    this.ctx.globalAlpha = 1
   }
 
   private drawGrid(width: number, height: number): void {

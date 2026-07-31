@@ -100,6 +100,10 @@ export function initApp(): void {
         layout.appShell.classList.remove('app-shell--hidden')
         canvas.resize()
       },
+      () => {
+        const r = FlightRocket.fromAssembly(assemblyState.getParts())
+        if (r && launchScene) launchScene.reset(r)
+      },
     )
     launchScene.start()
   }
@@ -113,7 +117,7 @@ export function initApp(): void {
     launchState.importData(saved.launchSequence)
     layout.symmetryToggle.dataset.enabled = String(saved.symmetryEnabled)
     layout.symmetryToggle.classList.toggle('active', saved.symmetryEnabled)
-    layout.symmetryToggle.textContent = saved.symmetryEnabled ? '对称：开' : '对称：关'
+    layout.symmetryToggle.textContent = saved.symmetryEnabled ? '对称：开（拖放）' : '对称：关'
     canvas.setSymmetryVisible(saved.symmetryEnabled)
     launchPanel.render()
     canvas.redraw()
@@ -127,7 +131,7 @@ export function initApp(): void {
 
     layout.symmetryToggle.dataset.enabled = String(next)
     layout.symmetryToggle.classList.toggle('active', next)
-    layout.symmetryToggle.textContent = next ? '对称：开' : '对称：关'
+    layout.symmetryToggle.textContent = next ? '对称：开（拖放）' : '对称：关'
     assemblyState.setSymmetryEnabled(next, axisX)
     canvas.setSymmetryVisible(next)
     canvas.resize()

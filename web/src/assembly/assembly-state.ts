@@ -36,12 +36,34 @@ export class AssemblyState {
     return this.selectedIds.has(id)
   }
 
-  setSymmetryEnabled(enabled: boolean, axisX: number): void {
+  setSymmetryEnabled(enabled: boolean, _axisX: number): void {
     this.symmetryEnabled = enabled
-    if (enabled) {
-      this.syncMirrors(axisX)
-    } else {
+    if (!enabled) {
       this.removeMirrorParts()
+    }
+  }
+
+  ensureMirrorForPart(part: PartInstance, axisX: number): void {
+    if (!this.symmetryEnabled || part.mirrorOf) return
+    if (!this.getMirror(part)) {
+      this.parts.push(this.createMirror(part, axisX))
+    } else {
+      const mirror = this.getMirror(part)!
+      this.positionMirror(part, mirror, axisX)
+    }
+  }
+
+  getMirrorPreviewPosition(
+    part: PartInstance,
+    axisX: number,
+  ): { x: number; y: number } | null {
+    if (!this.symmetryEnabled || part.mirrorOf) return null
+    const def = getPartDefinition(part.typeId)
+    const centerX = part.x + def.width / 2
+    const mirrorCenterX = 2 * axisX - centerX
+    return {
+      x: snapToGrid(mirrorCenterX - def.width / 2),
+      y: part.y,
     }
   }
 
@@ -56,8 +78,7 @@ export class AssemblyState {
     this.parts.push(part)
 
     if (this.symmetryEnabled) {
-      const mirror = this.createMirror(part, axisX)
-      this.parts.push(mirror)
+      this.ensureMirrorForPart(part, axisX)
     }
 
     updateRingEnvelopes(this.parts)
@@ -90,8 +111,8 @@ export class AssemblyState {
 
   importParts(parts: PartInstance[]): void {
     this.parts = parts
-      .filter((p) => (p.typeId as string) !== 'frustum')
-      .map((p) => ({ ...p }))
+      .filter((p) => (p.typeId as string) !== 'frustum' && !p.mirrorOf)
+      .map((p) => ({ ...p, mirrorOf: undefined }))
     this.selectedIds.clear()
     syncNextIdFromParts(this.parts)
     updateRingEnvelopes(this.parts)
@@ -210,8 +231,7 @@ export class AssemblyState {
       }
 
       if (this.symmetryEnabled) {
-        const mirror = this.getMirror(part)
-        if (mirror) this.positionMirror(part, mirror, axisX)
+        this.ensureMirrorForPart(part, axisX)
       }
     }
 
@@ -245,6 +265,10 @@ export class AssemblyState {
     return mirror
   }
 
+  hasMirror(primaryId: string): boolean {
+    return this.parts.some((p) => p.mirrorOf === primaryId)
+  }
+
   private getMirror(part: PartInstance): PartInstance | undefined {
     if (part.mirrorOf) {
       return this.parts.find((p) => p.id === part.mirrorOf)
@@ -258,15 +282,6 @@ export class AssemblyState {
     const mirrorCenterX = 2 * axisX - centerX
     mirror.x = snapToGrid(mirrorCenterX - def.width / 2)
     mirror.y = source.y
-  }
-
-  private syncMirrors(axisX: number): void {
-    const primaries = this.parts.filter((p) => !p.mirrorOf)
-    for (const part of primaries) {
-      if (!this.getMirror(part)) {
-        this.parts.push(this.createMirror(part, axisX))
-      }
-    }
   }
 
   private removeMirrorParts(): void {
