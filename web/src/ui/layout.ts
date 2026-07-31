@@ -72,8 +72,10 @@ export function createLayout(root: HTMLElement): LayoutElements {
       </div>
       <button type="button" class="map-toggle-btn" id="map-toggle">现场</button>
       <select id="map-focus-select" class="map-focus-select map-focus-select--hidden" aria-label="地图追踪">
+        <option value="rocket" selected>追踪：火箭</option>
         <option value="earth">追踪：地球</option>
-        <option value="rocket">追踪：火箭</option>
+        <option value="moon">追踪：月球</option>
+        <option value="sun">追踪：太阳</option>
       </select>
       <div class="time-warp-controls">
         <button type="button" class="warp-btn" id="warp-slower" title="减速">−</button>

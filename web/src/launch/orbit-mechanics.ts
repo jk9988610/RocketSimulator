@@ -1,6 +1,7 @@
 import { PX_PER_METER } from './flight-physics'
 import type { FlightState } from './flight-physics'
-import { CELESTIAL, EARTH_RADIUS_KM, MOON_ORBIT_KM, type CelestialId, type SurfaceRef } from './cosmos-scale'
+import { CELESTIAL, EARTH_RADIUS_KM, type CelestialId, type SurfaceRef } from './cosmos-scale'
+import { computeGeocentricState } from './cosmos-simulation'
 
 export interface OrbitalElements {
   apoapsisKm: number
@@ -75,12 +76,10 @@ export function altitudeAboveEarthKm(flight: FlightState): number {
   return Math.max(0, r / 1000 - EARTH_RADIUS_KM)
 }
 
-export function distanceToMoonKm(flight: FlightState): number {
+export function distanceToMoonKm(flight: FlightState, simTimeS = 0): number {
   const pos = positionFromEarthCenterM(flight)
-  const moonDistM = MOON_ORBIT_KM * 1000
-  const mx = moonDistM
-  const my = 0
-  return Math.hypot(pos.x - mx, pos.y - my) / 1000
+  const { moonPositionM } = computeGeocentricState(simTimeS)
+  return Math.hypot(pos.x - moonPositionM.x, pos.y - moonPositionM.y) / 1000
 }
 
 export interface HudReadout {
@@ -90,18 +89,24 @@ export interface HudReadout {
 }
 
 /** 仪表盘：单一距离读数，按位置自动切换地面/月面参考 */
-export function resolveHudReadout(flight: FlightState, grounded: boolean): HudReadout {
+export function resolveHudReadout(
+  flight: FlightState,
+  grounded: boolean,
+  simTimeS = 0,
+): HudReadout {
   const speedMs = Math.hypot(flight.vx, flight.vy)
   const altEarth = altitudeAboveEarthKm(flight)
-  const moonCenterKm = distanceToMoonKm(flight)
+  const moonCenterKm = distanceToMoonKm(flight, simTimeS)
   const moonSurfaceKm = Math.max(0, moonCenterKm - CELESTIAL.moon.radiusKm)
 
   const pos = positionFromEarthCenterM(flight)
   const earthCenterKm = Math.hypot(pos.x, pos.y) / 1000
+  const { moonPositionM } = computeGeocentricState(simTimeS)
+  const moonOrbitKm = Math.hypot(moonPositionM.x, moonPositionM.y) / 1000
 
   const useMoon =
     moonCenterKm < earthCenterKm &&
-    moonCenterKm < MOON_ORBIT_KM * 0.55 &&
+    moonCenterKm < moonOrbitKm * 0.55 &&
     altEarth > 50
 
   if (useMoon) {
