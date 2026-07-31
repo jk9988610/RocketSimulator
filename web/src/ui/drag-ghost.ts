@@ -5,6 +5,8 @@ import type { PartTypeId } from '../parts/types'
 export class DragGhost {
   private readonly el: HTMLDivElement
   private readonly canvas: HTMLCanvasElement
+  private cacheKey = ''
+  private dragging = false
 
   constructor() {
     this.el = document.createElement('div')
@@ -15,28 +17,45 @@ export class DragGhost {
     this.hide()
   }
 
-  update(typeId: PartTypeId, clientX: number, clientY: number): void {
+  start(typeId: PartTypeId): void {
+    this.dragging = true
+    this.ensurePreview(typeId)
+    this.el.style.display = 'block'
+    document.body.classList.add('is-dragging-part')
+  }
+
+  move(typeId: PartTypeId, clientX: number, clientY: number): void {
+    if (!this.dragging) return
+    this.ensurePreview(typeId)
+    this.el.style.left = `${clientX}px`
+    this.el.style.top = `${clientY}px`
+  }
+
+  hide(): void {
+    this.dragging = false
+    this.el.style.display = 'none'
+    document.body.classList.remove('is-dragging-part')
+  }
+
+  private ensurePreview(typeId: PartTypeId): void {
     const def = getPartDefinition(typeId)
-    const preview = renderPartPreviewCanvas(typeId, Math.max(def.width, def.height) + 16)
+    const size = Math.max(def.width, def.height) + 20
+    const key = `${typeId}-${size}`
+    if (this.cacheKey === key) return
+
+    const preview = renderPartPreviewCanvas(typeId, size)
     this.canvas.width = preview.width
     this.canvas.height = preview.height
     const ctx = this.canvas.getContext('2d')!
     ctx.clearRect(0, 0, preview.width, preview.height)
     ctx.drawImage(preview, 0, 0)
-
-    this.el.style.display = 'block'
-    this.el.style.left = `${clientX}px`
-    this.el.style.top = `${clientY}px`
-    this.el.style.transform = 'translate(-50%, -50%)'
     this.el.style.width = `${preview.width}px`
     this.el.style.height = `${preview.height}px`
-  }
-
-  hide(): void {
-    this.el.style.display = 'none'
+    this.cacheKey = key
   }
 
   destroy(): void {
+    this.hide()
     this.el.remove()
   }
 }

@@ -133,7 +133,7 @@ export class AssemblyCanvas {
   endPlaceDrag(clientX: number, clientY: number): void {
     if (this.drag.mode !== 'place' || !this.drag.partTypeId) return
 
-    const rect = this.canvas.getBoundingClientRect()
+    const rect = this.container.getBoundingClientRect()
     const inside =
       clientX >= rect.left &&
       clientX <= rect.right &&

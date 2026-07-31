@@ -83,6 +83,7 @@ body {
   overflow-y: auto;
   flex: 1;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .parts-list__item {
@@ -92,6 +93,7 @@ body {
   padding: 9px 12px;
   cursor: grab;
   transition: background 0.12s;
+  touch-action: none;
 }
 
 .parts-list__item:hover {
@@ -384,6 +386,17 @@ body {
   z-index: 10000;
   pointer-events: none;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.55));
+  transform: translate(-50%, -50%);
+}
+
+body.is-dragging-part {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.is-dragging-part .parts-list {
+  overflow: hidden;
 }
 
 .drag-ghost canvas {
@@ -391,8 +404,7 @@ body {
 }
 
 .parts-list__item.dragging {
-  background: rgba(59, 158, 255, 0.12);
-  opacity: 0.85;
+  background: rgba(59, 158, 255, 0.18);
 }
 
 #assembly-canvas {
