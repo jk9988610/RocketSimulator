@@ -1,3 +1,4 @@
+import { formatBuildLabel, formatBuildTooltip } from '../build-info'
 import { AssemblyState } from '../assembly/assembly-state'
 import { LaunchSequenceState } from '../assembly/launch-sequence'
 import { LaunchScene } from '../launch/launch-scene'
@@ -71,6 +72,9 @@ export function initApp(): void {
       triggerSave()
     },
   })
+
+  layout.buildStamp.textContent = formatBuildLabel()
+  layout.buildStamp.title = formatBuildTooltip()
 
   canvas.start()
   initPartsPanelPreviews(layout.partsPanel)

@@ -12,6 +12,7 @@ export interface LayoutElements {
   launchSequenceBtn: HTMLButtonElement
   launchBtn: HTMLButtonElement
   launchScene: HTMLElement
+  buildStamp: HTMLElement
 }
 
 export function createLayout(root: HTMLElement): LayoutElements {
@@ -45,6 +46,7 @@ export function createLayout(root: HTMLElement): LayoutElements {
           <button type="button" class="panel-btn" id="launch-sequence-btn">
             启动链
           </button>
+          <div class="build-stamp" id="build-stamp" aria-label="当前构建版本"></div>
         </footer>
       </aside>
       <main class="assembly-panel">
@@ -135,6 +137,7 @@ export function createLayout(root: HTMLElement): LayoutElements {
     launchSequenceBtn: root.querySelector('#launch-sequence-btn')!,
     launchBtn: root.querySelector('#launch-btn')!,
     launchScene: root.querySelector('#launch-scene')!,
+    buildStamp: root.querySelector('#build-stamp')!,
   }
 }
 
