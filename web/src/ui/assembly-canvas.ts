@@ -1,4 +1,5 @@
 import { AssemblyState } from '../assembly/assembly-state'
+import { isLaunchTargetType } from '../assembly/launch-sequence'
 import { GRID_SIZE, snapPoint } from '../assembly/grid'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
@@ -16,6 +17,14 @@ interface DragState {
   wasSelectedOnDown: boolean
 }
 
+type InteractionMode = 'assembly' | 'pick-target'
+
+export interface AssemblyCanvasOptions {
+  onPartPicked?: (partId: string) => void
+  getLaunchTargetIds?: () => Set<string>
+  onAssemblyChange?: () => void
+}
+
 export class AssemblyCanvas {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
@@ -31,10 +40,17 @@ export class AssemblyCanvas {
     wasSelectedOnDown: false,
   }
   private ghostPosition: PointerPosition | null = null
+  private interactionMode: InteractionMode = 'assembly'
+  private readonly options: AssemblyCanvasOptions
 
-  constructor(container: HTMLElement, state: AssemblyState) {
+  constructor(
+    container: HTMLElement,
+    state: AssemblyState,
+    options: AssemblyCanvasOptions = {},
+  ) {
     this.container = container
     this.state = state
+    this.options = options
 
     const canvas = container.querySelector<HTMLCanvasElement>('#assembly-canvas')
     if (!canvas) throw new Error('Assembly canvas not found')
@@ -75,7 +91,22 @@ export class AssemblyCanvas {
     this.draw()
   }
 
+  setInteractionMode(mode: InteractionMode): void {
+    this.interactionMode = mode
+    this.state.clearSelection()
+    this.draw()
+  }
+
+  getInteractionMode(): InteractionMode {
+    return this.interactionMode
+  }
+
+  redraw(): void {
+    this.draw()
+  }
+
   beginPlaceDrag(typeId: PartTypeId, clientX: number, clientY: number): void {
+    if (this.interactionMode !== 'assembly') return
     const pointer = this.clientToCanvas(clientX, clientY)
     this.drag = {
       mode: 'place',
@@ -117,6 +148,7 @@ export class AssemblyCanvas {
         pointer.y - def.height / 2,
         this.getAxisX(),
       )
+      this.options.onAssemblyChange?.()
     }
 
     this.drag = {
@@ -153,6 +185,15 @@ export class AssemblyCanvas {
     if (this.drag.mode === 'place') return
 
     const pointer = this.clientToCanvas(e.clientX, e.clientY)
+
+    if (this.interactionMode === 'pick-target') {
+      const hit = this.state.hitTestAny(pointer)
+      if (hit && isLaunchTargetType(hit.typeId)) {
+        this.options.onPartPicked?.(hit.id)
+      }
+      return
+    }
+
     const hit = this.state.hitTest(pointer)
 
     if (hit) {
@@ -178,7 +219,7 @@ export class AssemblyCanvas {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (this.drag.mode === 'place') return
+    if (this.drag.mode === 'place' || this.interactionMode === 'pick-target') return
 
     if (this.drag.mode === 'move') {
       const pointer = this.clientToCanvas(e.clientX, e.clientY)
@@ -190,6 +231,7 @@ export class AssemblyCanvas {
         this.state.moveParts(ids, dx, dy, this.getAxisX())
         this.drag.lastPointer = pointer
         this.drag.moved = true
+        this.options.onAssemblyChange?.()
         this.draw()
       }
     }
@@ -238,7 +280,19 @@ export class AssemblyCanvas {
       }
 
       for (const part of this.state.getParts()) {
-        drawPart(this.ctx, part, this.state.isSelected(part.id))
+        const isSelected = this.state.isSelected(part.id)
+        const isLaunchTarget = this.options.getLaunchTargetIds?.().has(part.id) ?? false
+        const isEligible =
+          this.interactionMode === 'pick-target' && isLaunchTargetType(part.typeId)
+
+        drawPart(this.ctx, part, isSelected)
+
+        if (isLaunchTarget) {
+          this.drawLaunchTargetBadge(part)
+        }
+        if (isEligible) {
+          this.drawEligibleHighlight(part)
+        }
       }
 
       if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition) {
@@ -277,6 +331,22 @@ export class AssemblyCanvas {
     this.ctx.lineTo(centerX + 0.5, height)
     this.ctx.stroke()
     this.ctx.setLineDash([])
+  }
+
+  private drawEligibleHighlight(part: PartInstance): void {
+    const def = getPartDefinition(part.typeId)
+    this.ctx.strokeStyle = 'rgba(255, 210, 60, 0.7)'
+    this.ctx.lineWidth = 2
+    this.ctx.setLineDash([4, 4])
+    this.ctx.strokeRect(part.x - 1, part.y - 1, def.width + 2, def.height + 2)
+    this.ctx.setLineDash([])
+  }
+
+  private drawLaunchTargetBadge(part: PartInstance): void {
+    const def = getPartDefinition(part.typeId)
+    this.ctx.strokeStyle = 'rgba(80, 220, 120, 0.85)'
+    this.ctx.lineWidth = 2
+    this.ctx.strokeRect(part.x - 2, part.y - 2, def.width + 4, def.height + 4)
   }
 
   private drawGhost(typeId: PartTypeId, pointer: PointerPosition): void {

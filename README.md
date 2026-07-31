@@ -58,4 +58,5 @@ GitHub Pages 部署后访问：`https://jk9988610.github.io/RocketSimulator/`
 
 - [x] M0：横屏布局骨架 + Pages CI
 - [x] M1：部件拖放、网格吸附、多选与群组拖动、对称放置
-- [ ] M2：启动链配置
+- [x] M2：启动链配置与本地保存
+- [ ] M3：发射台与基础飞行
