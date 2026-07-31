@@ -1,3 +1,4 @@
+import { getCommandPodTopWidth } from './definitions'
 import type { PartInstance, PartTypeId } from './types'
 
 export type ConnectorKind = 'top' | 'bottom' | 'left' | 'right'
@@ -15,9 +16,15 @@ export interface WorldConnector {
   y: number
 }
 
+function parachuteConnectors(): ConnectorDef[] {
+  const w = Math.round(getCommandPodTopWidth())
+  const h = Math.round(w / 2)
+  return [{ kind: 'bottom', lx: w / 2, ly: h }]
+}
+
 const CONNECTORS: Record<PartTypeId, ConnectorDef[]> = {
   'command-pod': [{ kind: 'bottom', lx: 32, ly: 64 }],
-  parachute: [{ kind: 'bottom', lx: 32, ly: 40 }],
+  parachute: parachuteConnectors(),
   'heat-shield': [
     { kind: 'top', lx: 32, ly: 0 },
     { kind: 'bottom', lx: 32, ly: 16 },
@@ -46,7 +53,8 @@ const OPPOSITE: Record<ConnectorKind, ConnectorKind> = {
 }
 
 export function getConnectorsForPart(part: PartInstance): WorldConnector[] {
-  const defs = CONNECTORS[part.typeId] ?? []
+  const defs =
+    part.typeId === 'parachute' ? parachuteConnectors() : CONNECTORS[part.typeId] ?? []
   return defs.map((c) => ({
     partId: part.id,
     kind: c.kind,

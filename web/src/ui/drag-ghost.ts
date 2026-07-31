@@ -1,5 +1,5 @@
 import { getPartDefinition } from '../parts/definitions'
-import { renderPartPreviewCanvas } from '../parts/render'
+import { renderPartPreviewCanvas1to1 } from '../parts/render'
 import type { PartTypeId } from '../parts/types'
 
 export class DragGhost {
@@ -24,9 +24,8 @@ export class DragGhost {
     document.body.classList.add('is-dragging-part')
   }
 
-  move(typeId: PartTypeId, clientX: number, clientY: number): void {
+  move(_typeId: PartTypeId, clientX: number, clientY: number): void {
     if (!this.dragging) return
-    this.ensurePreview(typeId)
     this.el.style.left = `${clientX}px`
     this.el.style.top = `${clientY}px`
   }
@@ -38,20 +37,18 @@ export class DragGhost {
   }
 
   private ensurePreview(typeId: PartTypeId): void {
-    const def = getPartDefinition(typeId)
-    const size = Math.max(def.width, def.height) + 20
-    const key = `${typeId}-${size}`
-    if (this.cacheKey === key) return
+    if (this.cacheKey === typeId) return
 
-    const preview = renderPartPreviewCanvas(typeId, size)
+    const def = getPartDefinition(typeId)
+    const preview = renderPartPreviewCanvas1to1(typeId)
     this.canvas.width = preview.width
     this.canvas.height = preview.height
     const ctx = this.canvas.getContext('2d')!
     ctx.clearRect(0, 0, preview.width, preview.height)
     ctx.drawImage(preview, 0, 0)
-    this.el.style.width = `${preview.width}px`
-    this.el.style.height = `${preview.height}px`
-    this.cacheKey = key
+    this.el.style.width = `${def.width}px`
+    this.el.style.height = `${def.height}px`
+    this.cacheKey = typeId
   }
 
   destroy(): void {

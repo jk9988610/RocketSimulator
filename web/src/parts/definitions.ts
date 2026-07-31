@@ -1,5 +1,14 @@
 import type { PartDefinition, PartTypeId } from './types'
 
+export const COMMAND_POD_INSET_RATIO = 0.14
+
+/** 指令仓顶部宽度（与降落伞半球直径对齐） */
+export function getCommandPodTopWidth(podWidth = 64): number {
+  return podWidth * (1 - 2 * COMMAND_POD_INSET_RATIO)
+}
+
+const POD_TOP_W = Math.round(getCommandPodTopWidth())
+
 export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
   'command-pod': {
     id: 'command-pod',
@@ -12,8 +21,8 @@ export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
   parachute: {
     id: 'parachute',
     label: '降落伞',
-    width: 64,
-    height: 40,
+    width: POD_TOP_W,
+    height: Math.round(POD_TOP_W / 2),
     color: '#ff6b6b',
     accent: '#cc4444',
   },

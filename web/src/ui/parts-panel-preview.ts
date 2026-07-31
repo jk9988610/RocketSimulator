@@ -1,20 +1,21 @@
 import { PART_LIST } from '../parts/definitions'
-import { renderPartPreviewCanvas } from '../parts/render'
+import { renderPartPreviewCanvas1to1 } from '../parts/render'
+import type { PartTypeId } from '../parts/types'
 
 export function initPartsPanelPreviews(panel: HTMLElement): void {
-  panel.querySelectorAll<HTMLElement>('.parts-list__item').forEach((item) => {
-    const typeId = item.dataset.partId
+  panel.querySelectorAll<HTMLElement>('.inventory-item').forEach((item) => {
+    const typeId = item.dataset.partId as PartTypeId | undefined
     if (!typeId) return
 
-    const slot = item.querySelector<HTMLElement>('.parts-list__preview')
+    const slot = item.querySelector<HTMLElement>('.inventory-item__preview')
     if (!slot) return
 
-    const canvas = renderPartPreviewCanvas(typeId as import('../parts/types').PartTypeId, 32)
-    canvas.className = 'parts-list__preview-canvas'
+    const canvas = renderPartPreviewCanvas1to1(typeId)
+    canvas.className = 'inventory-item__canvas'
+    canvas.style.width = `${canvas.width}px`
+    canvas.style.height = `${canvas.height}px`
     slot.replaceChildren(canvas)
   })
 }
 
-export function getPartLabels(): typeof PART_LIST {
-  return PART_LIST
-}
+export { PART_LIST }

@@ -96,6 +96,18 @@ export function drawPartAt(
   ctx.restore()
 }
 
+export function renderPartPreviewCanvas1to1(typeId: PartTypeId): HTMLCanvasElement {
+  const def = getPartDefinition(typeId)
+  const canvas = document.createElement('canvas')
+  canvas.width = def.width
+  canvas.height = def.height
+  const ctx = canvas.getContext('2d')!
+  ctx.clearRect(0, 0, def.width, def.height)
+  drawPartAt(ctx, typeId, 0, 0, {})
+  return canvas
+}
+
+/** @deprecated 用于缩略图；物件栏请用 renderPartPreviewCanvas1to1 */
 export function renderPartPreviewCanvas(
   typeId: PartTypeId,
   size: number,
@@ -133,8 +145,7 @@ function strokePartOutline(
       ctx.stroke()
       break
     case 'parachute':
-      ctx.beginPath()
-      ctx.arc(x + w / 2, y + h, w / 2, Math.PI, 0)
+      drawParachuteOutline(ctx, x, y, w, h)
       ctx.stroke()
       break
     case 'heat-shield':
@@ -220,23 +231,61 @@ function drawParachute(
   color: string,
   accent: string,
 ): void {
-  const grad = ctx.createRadialGradient(x + w / 2, y + h, 0, x + w / 2, y + h, w / 2)
-  grad.addColorStop(0, lighten(color, 20))
+  const cx = x + w / 2
+  const baseY = y + h
+  const outerR = w / 2
+  const innerR = outerR * 0.62
+
+  ctx.fillStyle = 'rgba(210, 215, 225, 0.55)'
+  ctx.strokeStyle = 'rgba(160, 168, 180, 0.9)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(cx, baseY, outerR, Math.PI, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(cx - outerR, baseY)
+  ctx.lineTo(cx + outerR, baseY)
+  ctx.stroke()
+
+  const grad = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, innerR)
+  grad.addColorStop(0, lighten(color, 24))
   grad.addColorStop(1, color)
   ctx.fillStyle = grad
   ctx.beginPath()
-  ctx.arc(x + w / 2, y + h, w / 2, Math.PI, 0)
+  ctx.arc(cx, baseY, innerR, Math.PI, 0)
   ctx.closePath()
   ctx.fill()
   ctx.strokeStyle = accent
-  ctx.lineWidth = 2
+  ctx.lineWidth = 1.5
   ctx.stroke()
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(x + w / 2, y + h)
-  ctx.lineTo(x + w / 2, y + h + 10)
+  ctx.moveTo(cx - innerR * 0.5, baseY - innerR * 0.3)
+  ctx.lineTo(cx, baseY - innerR * 0.75)
+  ctx.lineTo(cx + innerR * 0.5, baseY - innerR * 0.3)
   ctx.stroke()
+}
+
+function drawParachuteOutline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const cx = x + w / 2
+  const baseY = y + h
+  ctx.beginPath()
+  ctx.arc(cx, baseY, w / 2, Math.PI, 0)
+  ctx.closePath()
+  ctx.moveTo(cx - w / 2, baseY)
+  ctx.lineTo(cx + w / 2, baseY)
 }
 
 function drawHeatShield(
