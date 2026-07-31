@@ -5,14 +5,12 @@ import {
   getPartBottomY,
   getPartBounds,
   getPartTopY,
-  isStackedBelow,
   isStackedOn,
   RING_GEOMETRY,
 } from '../parts/part-geometry'
 import type { PartInstance } from '../parts/types'
 
 const ANCHOR_TYPES = new Set(['command-pod', 'fuel-tank'])
-const BELOW_BLOCKS_WRAP = new Set(['fuel-tank', 'engine'])
 
 function partCenterX(part: PartInstance): number {
   return getPartBounds(part).centerX
@@ -43,21 +41,6 @@ function clearEnvelopeState(parts: PartInstance[]): void {
       delete part.ringBottomLy
     }
   }
-}
-
-function findPartBelow(
-  column: readonly PartInstance[],
-  ring: PartInstance,
-  placedBottom: number,
-): PartInstance | null {
-  return (
-    column.find(
-      (p) =>
-        p.id !== ring.id &&
-        BELOW_BLOCKS_WRAP.has(p.typeId) &&
-        isStackedBelow(p, placedBottom),
-    ) ?? null
-  )
 }
 
 function resolveSpanTopFromEngine(
@@ -106,9 +89,6 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
     const placementTop = ring.y
     const placedBottom = placementTop + ringDef.height
     ring.ringPlacementTop = placementTop
-
-    const partBelow = findPartBelow(column, ring, placedBottom)
-    if (partBelow !== null) continue
 
     let spanTop = placementTop
     const spanBottom = placedBottom
