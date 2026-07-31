@@ -3,7 +3,7 @@ import type { FlightRocket } from './rocket-body'
 const GRAVITY = 9.81
 const PX_PER_METER = 32
 const DRAG = 0.02
-const PARACHUTE_DRAG = 2.5
+const PARACHUTE_DRAG = 4.2
 const TILT_RATE = 0.8
 
 export interface FlightState {
