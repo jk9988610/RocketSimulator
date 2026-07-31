@@ -23,7 +23,9 @@ import {
   altitudeAboveEarthKm,
   resolveHudReadout,
 } from './orbit-mechanics'
-import { gravityAtAltitude, KARMAN_LINE_KM } from './atmosphere'
+import { KARMAN_LINE_KM } from './atmosphere'
+import { computeGeocentricState } from './cosmos-simulation'
+import { computeGravityAcceleration } from './gravity'
 import {
   collectPartsBelowConnector,
   createFloatingStage,
@@ -76,6 +78,7 @@ export class LaunchScene {
   private mapFocusActive = true
   private mapDragging = false
   private mapDragStart = { x: 0, y: 0, panX: 0, panY: 0 }
+  private cosmosSimTimeS = 0
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -133,6 +136,7 @@ export class LaunchScene {
     this.throttle = 0
     this.statusTimer = 0
     this.statusMessage = ''
+    this.cosmosSimTimeS = 0
     this.updateFuelBars()
     const engineSwitch = this.container.querySelector<HTMLButtonElement>('#engine-switch')
     const throttle = this.container.querySelector<HTMLInputElement>('#throttle')
@@ -264,14 +268,14 @@ export class LaunchScene {
     })
 
     mapFocusSelect.addEventListener('change', () => {
-      this.mapFocusTarget = mapFocusSelect.value as 'earth' | 'rocket'
+      this.mapFocusTarget = mapFocusSelect.value as MapFocusTarget
       this.mapFocusActive = true
     })
 
     const setMapModeUi = (isMap: boolean): void => {
       mapFocusSelect.classList.toggle('map-focus-select--hidden', !isMap)
       if (isMap) {
-        this.mapFocusTarget = mapFocusSelect.value as 'earth' | 'rocket'
+        this.mapFocusTarget = mapFocusSelect.value as MapFocusTarget
         this.mapFocusActive = true
       }
     }
@@ -360,7 +364,6 @@ export class LaunchScene {
             this.earthScale = Math.max(0.5, Math.min(3, this.earthScale * ratio))
           } else {
             this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * ratio))
-            this.mapFocusActive = false
           }
         }
         this.lastPinchDist = dist
@@ -380,7 +383,6 @@ export class LaunchScene {
         e.preventDefault()
         const factor = e.deltaY > 0 ? 0.9 : 1.1
         this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * factor))
-        this.mapFocusActive = false
       },
       { passive: false },
     )
@@ -420,6 +422,7 @@ export class LaunchScene {
     const rawDt = Math.min((now - this.lastTime) / 1000, 0.05)
     this.lastTime = now
     const dt = this.paused ? 0 : rawDt * this.timeWarp
+    if (dt > 0) this.cosmosSimTimeS += dt
 
     const width = this.canvas.clientWidth
     const height = this.canvas.clientHeight
@@ -448,11 +451,13 @@ export class LaunchScene {
       tiltRight: this.tiltRight,
       grounded: grounded && this.flight.vy <= 0.01,
       altKm,
+      simTimeS: this.cosmosSimTimeS,
     })
 
-    const grav = gravityAtAltitude(altKm)
+    const grav = computeGravityAcceleration(this.flight, this.cosmosSimTimeS)
+    const gravScalar = Math.hypot(grav.ax, grav.ay)
     for (const stage of this.floatingStages) {
-      updateFloatingStage(stage, dt, grav)
+      updateFloatingStage(stage, dt, gravScalar)
     }
 
     if (this.statusTimer > 0) this.statusTimer -= dt
@@ -492,6 +497,7 @@ export class LaunchScene {
         WORLD_PAD_X,
         WORLD_PAD_Y,
         this.mapZoom,
+        this.cosmosSimTimeS,
       )
       const pan = panToFocusTarget(layout, this.mapFocusTarget, this.mapZoom)
       this.mapPanX = pan.panX
@@ -547,6 +553,7 @@ export class LaunchScene {
         WORLD_PAD_Y,
         this.flight.angle,
         { zoom: this.mapZoom, panX: this.mapPanX, panY: this.mapPanY },
+        this.cosmosSimTimeS,
       )
       return
     }
@@ -608,17 +615,29 @@ export class LaunchScene {
     const earthR = 720 * this.earthScale
     const cx = 0
     const cy = 280
+    const { earthRotation } = computeGeocentricState(this.cosmosSimTimeS)
+
+    this.ctx.save()
+    this.ctx.translate(cx, cy)
+    this.ctx.rotate(earthRotation)
 
     this.ctx.fillStyle = '#1b4332'
     this.ctx.beginPath()
-    this.ctx.arc(cx, cy, earthR, 0, Math.PI * 2)
+    this.ctx.arc(0, 0, earthR, 0, Math.PI * 2)
+    this.ctx.fill()
+
+    this.ctx.fillStyle = '#74c69d'
+    this.ctx.beginPath()
+    this.ctx.arc(earthR * 0.55, 0, earthR * 0.08, 0, Math.PI * 2)
     this.ctx.fill()
 
     this.ctx.strokeStyle = '#40916c'
     this.ctx.lineWidth = 3
     this.ctx.beginPath()
-    this.ctx.arc(cx, cy, earthR, Math.PI * 1.05, Math.PI * 1.95)
+    this.ctx.arc(0, 0, earthR, Math.PI * 1.05, Math.PI * 1.95)
     this.ctx.stroke()
+
+    this.ctx.restore()
   }
 
   private drawLaunchPad(): void {
@@ -722,7 +741,7 @@ export class LaunchScene {
 
   private updateFlightHud(grounded?: boolean): void {
     const onGround = grounded ?? this.flight.y >= WORLD_PAD_Y - 1
-    const hud = resolveHudReadout(this.flight, onGround)
+    const hud = resolveHudReadout(this.flight, onGround, this.cosmosSimTimeS)
     const speedEl = this.container.querySelector<HTMLElement>('#hud-speed')
     const altLabelEl = this.container.querySelector<HTMLElement>('#hud-alt-label')
     const altEl = this.container.querySelector<HTMLElement>('#hud-altitude')

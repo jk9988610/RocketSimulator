@@ -2,8 +2,8 @@ import type { FlightRocket } from './rocket-body'
 import {
   airDensityRatio,
   atmosphereDragMultiplier,
-  gravityAtAltitude,
 } from './atmosphere'
+import { computeGravityAcceleration } from './gravity'
 
 const PX_PER_METER = 32
 const BASE_DRAG = 0.02
@@ -44,6 +44,7 @@ export function updateFlight(
     tiltRight: boolean
     grounded: boolean
     altKm: number
+    simTimeS: number
   },
 ): void {
   if (options.tiltLeft) state.angle -= TILT_RATE * dt
@@ -51,9 +52,9 @@ export function updateFlight(
   state.angle = clamp(state.angle, -1.2, 1.2)
 
   const mass = Math.max(rocket.getTotalMass(), 1)
-  const gravity = gravityAtAltitude(options.altKm)
-  let ax = 0
-  let ay = gravity
+  const grav = computeGravityAcceleration(state, options.simTimeS)
+  let ax = grav.ax
+  let ay = grav.ay
 
   if (options.engineOn) {
     const thrust = rocket.getIgnitedEngineThrust(options.throttle, options.activeEngineIds)
@@ -67,7 +68,7 @@ export function updateFlight(
   }
 
   if (options.grounded) {
-    if (ay >= gravity * 0.98) {
+    if (ay >= grav.ay * 0.98) {
       state.vy = 0
       state.vx *= 0.92
       return
