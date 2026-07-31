@@ -1,17 +1,8 @@
-const PARTS = [
-  { id: 'frustum', label: '圆台' },
-  { id: 'command-pod', label: '指令仓' },
-  { id: 'parachute', label: '降落伞' },
-  { id: 'heat-shield', label: '隔热片' },
-  { id: 'ring-connector', label: '圆环连接器' },
-  { id: 'fuel-tank', label: '圆柱燃料箱' },
-  { id: 'radial-connector', label: '径向连接器' },
-  { id: 'nose-cone', label: '鼻锥' },
-  { id: 'engine', label: '引擎' },
-] as const
+import { PART_LIST } from '../parts/definitions'
 
 export interface LayoutElements {
   assemblyArea: HTMLDivElement
+  partsPanel: HTMLElement
   symmetryToggle: HTMLButtonElement
   launchSequenceBtn: HTMLButtonElement
 }
@@ -19,13 +10,13 @@ export interface LayoutElements {
 export function createLayout(root: HTMLElement): LayoutElements {
   root.innerHTML = `
     <div class="app-shell">
-      <aside class="parts-panel">
+      <aside class="parts-panel" id="parts-panel">
         <header class="parts-panel__header">物件栏</header>
         <ul class="parts-list" role="list">
-          ${PARTS.map(
+          ${PART_LIST.map(
             (part) => `
-              <li class="parts-list__item" data-part-id="${part.id}" draggable="false">
-                <span class="parts-list__icon" aria-hidden="true"></span>
+              <li class="parts-list__item" data-part-id="${part.id}">
+                <span class="parts-list__icon parts-list__icon--${part.id}" aria-hidden="true"></span>
                 <span class="parts-list__label">${part.label}</span>
               </li>
             `,
@@ -55,6 +46,7 @@ export function createLayout(root: HTMLElement): LayoutElements {
 
   return {
     assemblyArea: root.querySelector('#assembly-area')!,
+    partsPanel: root.querySelector('#parts-panel')!,
     symmetryToggle: root.querySelector('#symmetry-toggle')!,
     launchSequenceBtn: root.querySelector('#launch-sequence-btn')!,
   }
