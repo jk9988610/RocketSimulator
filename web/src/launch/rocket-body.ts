@@ -6,6 +6,14 @@ export interface FlightPartState extends PartInstance {
   ignited: boolean
   parachuteDeployed: boolean
   connectorOpen: boolean
+  fuel?: number
+}
+
+export interface FuelTankStatus {
+  id: string
+  label: string
+  fraction: number
+  y: number
 }
 
 export interface RocketBounds {
@@ -19,18 +27,21 @@ export interface RocketBounds {
   bottomY: number
 }
 
-const PART_MASS: Record<PartTypeId, number> = {
+const PART_DRY_MASS: Record<PartTypeId, number> = {
   'command-pod': 1200,
   parachute: 150,
   'heat-shield': 200,
   'ring-connector': 300,
-  'fuel-tank': 2500,
+  'fuel-tank': 400,
   'radial-connector': 400,
   'nose-cone': 100,
   engine: 900,
 }
 
+const FUEL_CAPACITY = 4800
+const FUEL_MASS_PER_UNIT = 0.5
 const ENGINE_THRUST = 18000
+const FUEL_BURN_RATE = 2.8
 
 export class FlightRocket {
   readonly parts: FlightPartState[]
@@ -45,6 +56,7 @@ export class FlightRocket {
         ignited: false,
         parachuteDeployed: false,
         connectorOpen: false,
+        fuel: p.typeId === 'fuel-tank' ? FUEL_CAPACITY : undefined,
       }))
     this.bounds = this.computeBounds()
   }
@@ -62,16 +74,64 @@ export class FlightRocket {
   getTotalMass(): number {
     return this.parts
       .filter((p) => !p.detached)
-      .reduce((sum, p) => sum + PART_MASS[p.typeId], 0)
+      .reduce((sum, p) => {
+        let mass = PART_DRY_MASS[p.typeId]
+        if (p.typeId === 'fuel-tank' && p.fuel !== undefined) {
+          mass += p.fuel * FUEL_MASS_PER_UNIT
+        }
+        return sum + mass
+      }, 0)
+  }
+
+  getFuelTanksOrdered(): FuelTankStatus[] {
+    return this.parts
+      .filter((p) => p.typeId === 'fuel-tank' && !p.detached)
+      .sort((a, b) => a.y - b.y)
+      .map((p, i) => ({
+        id: p.id,
+        label: `燃料箱 ${i + 1}`,
+        fraction: (p.fuel ?? 0) / FUEL_CAPACITY,
+        y: p.y,
+      }))
+  }
+
+  consumeFuel(dt: number, throttle: number, engineCount: number): void {
+    if (engineCount <= 0 || throttle <= 0) return
+    const need = FUEL_BURN_RATE * throttle * engineCount * dt
+    let remaining = need
+
+    const tanks = this.parts
+      .filter((p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0)
+      .sort((a, b) => b.y - a.y)
+
+    for (const tank of tanks) {
+      if (remaining <= 0) break
+      const take = Math.min(tank.fuel ?? 0, remaining)
+      tank.fuel = (tank.fuel ?? 0) - take
+      remaining -= take
+    }
+  }
+
+  hasFuel(): boolean {
+    return this.parts.some(
+      (p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0.01,
+    )
   }
 
   getIgnitedEngineThrust(throttle: number, activeEngineIds: string[]): number {
-    if (throttle <= 0 || activeEngineIds.length === 0) return 0
+    if (throttle <= 0 || activeEngineIds.length === 0 || !this.hasFuel()) return 0
     const active = new Set(activeEngineIds)
     const count = this.parts.filter(
       (p) => p.typeId === 'engine' && !p.detached && p.ignited && active.has(p.id),
     ).length
     return count * ENGINE_THRUST * throttle
+  }
+
+  getActiveEngineCount(activeEngineIds: string[]): number {
+    const active = new Set(activeEngineIds)
+    return this.parts.filter(
+      (p) => p.typeId === 'engine' && !p.detached && p.ignited && active.has(p.id),
+    ).length
   }
 
   hasParachuteDeployed(): boolean {
@@ -160,3 +220,5 @@ export function getActiveStageEngineIds(
   }
   return []
 }
+
+export { FUEL_CAPACITY }

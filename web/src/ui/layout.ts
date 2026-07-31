@@ -63,8 +63,20 @@ export function createLayout(root: HTMLElement): LayoutElements {
     </div>
     <div id="launch-scene" class="launch-scene launch-scene--hidden">
       <canvas id="launch-canvas" aria-label="发射台"></canvas>
-      <button type="button" class="back-btn" id="back-to-assembly">← 返回组装</button>
+      <div class="launch-menu-wrap">
+        <button type="button" class="menu-btn" id="launch-menu-btn" aria-haspopup="true">☰ 菜单</button>
+        <div id="launch-menu" class="launch-menu launch-menu--hidden">
+          <button type="button" class="launch-menu__item" id="back-to-assembly">返回组装</button>
+          <button type="button" class="launch-menu__item" id="relaunch-btn">重新发射</button>
+        </div>
+      </div>
       <button type="button" class="map-toggle-btn" id="map-toggle">现场</button>
+      <div class="time-warp-controls">
+        <button type="button" class="warp-btn" id="warp-slower" title="减速">−</button>
+        <span class="warp-label" id="warp-label">1×</span>
+        <button type="button" class="warp-btn" id="warp-faster" title="加速">+</button>
+      </div>
+      <div id="fuel-bars" class="fuel-bars"></div>
       <div class="tilt-controls">
         <button type="button" class="tilt-btn" id="tilt-left" aria-label="左倾">←</button>
         <button type="button" class="tilt-btn" id="tilt-right" aria-label="右倾">→</button>

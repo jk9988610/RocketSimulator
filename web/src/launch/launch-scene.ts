@@ -5,7 +5,6 @@ import type { PartInstance } from '../parts/types'
 import {
   createInitialFlightState,
   updateFlight,
-  PX_PER_METER,
   type FlightState,
 } from './flight-physics'
 import {
@@ -16,17 +15,17 @@ import { drawMapView, type ViewMode } from './map-renderer'
 import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
 import {
-  altitudeMeters,
   evaluateLanding,
   landingMessage,
   type LandingResult,
 } from './landing'
 import {
-  atmosphereZone,
-  gravityAtAltitude,
-  KARMAN_LINE_KM,
-  zoneLabel,
-} from './atmosphere'
+  altitudeAboveEarthKm,
+  computeOrbitalElements,
+  distanceToMoonKm,
+  resolveSurfaceState,
+} from './orbit-mechanics'
+import { gravityAtAltitude, KARMAN_LINE_KM } from './atmosphere'
 import {
   collectPartsBelowConnector,
   createFloatingStage,
@@ -70,20 +69,29 @@ export class LaunchScene {
   private prevGrounded = true
   private landingResult: LandingResult = 'none'
   private floatingStages: FloatingStage[] = []
+  private timeWarp = 1
+  private mapZoom = 1
+  private mapPanX = 0
+  private mapPanY = 0
+  private mapDragging = false
+  private mapDragStart = { x: 0, y: 0, panX: 0, panY: 0 }
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
+  private readonly onRelaunch: () => void
 
   constructor(
     container: HTMLElement,
     rocket: FlightRocket,
     launchState: LaunchSequenceState,
     onBack: () => void,
+    onRelaunch: () => void,
   ) {
     this.container = container
     this.rocket = rocket
     this.launchState = launchState
     this.onBack = onBack
+    this.onRelaunch = onRelaunch
 
     const canvas = container.querySelector<HTMLCanvasElement>('#launch-canvas')
     if (!canvas) throw new Error('Launch canvas not found')
@@ -101,9 +109,37 @@ export class LaunchScene {
     this.resize()
     this.bindControls()
     this.bindPinchZoom()
+    this.bindMapInteraction()
     this.running = true
     this.lastTime = performance.now()
+    this.updateFuelBars()
     this.loop()
+  }
+
+  reset(rocket: FlightRocket): void {
+    this.rocket = rocket
+    this.flight = createInitialFlightState(WORLD_PAD_X, WORLD_PAD_Y, rocket)
+    this.cameraX = WORLD_PAD_X
+    this.cameraY = WORLD_PAD_Y + CAMERA_Y_OFFSET
+    this.orbitTracker.reset()
+    this.stageRunner.reset()
+    this.floatingStages = []
+    this.landingResult = 'none'
+    this.maxAltM = 0
+    this.prevGrounded = true
+    this.engineOn = false
+    this.throttle = 0
+    this.statusTimer = 0
+    this.statusMessage = ''
+    this.updateFuelBars()
+    const engineSwitch = this.container.querySelector<HTMLButtonElement>('#engine-switch')
+    const throttle = this.container.querySelector<HTMLInputElement>('#throttle')
+    if (engineSwitch) {
+      engineSwitch.textContent = '引擎关'
+      engineSwitch.classList.remove('active')
+    }
+    if (throttle) throttle.value = '0'
+    this.showStatus('重新发射', 2)
   }
 
   stop(): void {
@@ -132,9 +168,36 @@ export class LaunchScene {
     const sequenceView = this.container.querySelector<HTMLButtonElement>('#sequence-view-btn')!
     const sequencePanel = this.container.querySelector<HTMLElement>('#sequence-readout')!
     const backBtn = this.container.querySelector<HTMLButtonElement>('#back-to-assembly')!
+    const relaunchBtn = this.container.querySelector<HTMLButtonElement>('#relaunch-btn')!
+    const menuBtn = this.container.querySelector<HTMLButtonElement>('#launch-menu-btn')!
+    const menuPanel = this.container.querySelector<HTMLElement>('#launch-menu')!
+    const warpSlower = this.container.querySelector<HTMLButtonElement>('#warp-slower')!
+    const warpFaster = this.container.querySelector<HTMLButtonElement>('#warp-faster')!
+    const warpLabel = this.container.querySelector<HTMLElement>('#warp-label')!
     const mapToggle = this.container.querySelector<HTMLButtonElement>('#map-toggle')!
 
     this.sequencePanel = sequencePanel
+
+    const setWarp = (factor: number): void => {
+      this.timeWarp = Math.max(0.25, Math.min(8, factor))
+      if (warpLabel) warpLabel.textContent = `${this.timeWarp}×`
+    }
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      menuPanel.classList.toggle('launch-menu--hidden')
+    })
+
+    document.addEventListener('click', () => {
+      menuPanel.classList.add('launch-menu--hidden')
+    })
+
+    menuPanel.addEventListener('click', (e) => e.stopPropagation())
+
+    relaunchBtn.addEventListener('click', () => {
+      menuPanel.classList.add('launch-menu--hidden')
+      this.onRelaunch()
+    })
 
     engineSwitch.addEventListener('click', () => {
       this.engineOn = !this.engineOn
@@ -166,9 +229,13 @@ export class LaunchScene {
     })
 
     backBtn.addEventListener('click', () => {
+      menuPanel.classList.add('launch-menu--hidden')
       this.stop()
       this.onBack()
     })
+
+    warpSlower.addEventListener('click', () => setWarp(this.timeWarp / 2))
+    warpFaster.addEventListener('click', () => setWarp(this.timeWarp * 2))
 
     mapToggle.addEventListener('click', () => {
       this.viewMode = this.viewMode === 'live' ? 'map' : 'live'
@@ -241,18 +308,21 @@ export class LaunchScene {
     this.canvas.addEventListener(
       'touchmove',
       (e) => {
-        if (e.touches.length === 2 && this.viewMode === 'live') {
-          e.preventDefault()
-          const dist = Math.hypot(
-            e.touches[0]!.clientX - e.touches[1]!.clientX,
-            e.touches[0]!.clientY - e.touches[1]!.clientY,
-          )
-          if (this.lastPinchDist > 0) {
-            const ratio = dist / this.lastPinchDist
+        if (e.touches.length !== 2) return
+        e.preventDefault()
+        const dist = Math.hypot(
+          e.touches[0]!.clientX - e.touches[1]!.clientX,
+          e.touches[0]!.clientY - e.touches[1]!.clientY,
+        )
+        if (this.lastPinchDist > 0) {
+          const ratio = dist / this.lastPinchDist
+          if (this.viewMode === 'live') {
             this.earthScale = Math.max(0.5, Math.min(3, this.earthScale * ratio))
+          } else {
+            this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * ratio))
           }
-          this.lastPinchDist = dist
         }
+        this.lastPinchDist = dist
       },
       { passive: false },
     )
@@ -261,11 +331,50 @@ export class LaunchScene {
     })
   }
 
+  private bindMapInteraction(): void {
+    this.canvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.viewMode !== 'map') return
+        e.preventDefault()
+        const factor = e.deltaY > 0 ? 0.9 : 1.1
+        this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * factor))
+      },
+      { passive: false },
+    )
+
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (this.viewMode !== 'map') return
+      this.mapDragging = true
+      this.mapDragStart = {
+        x: e.clientX,
+        y: e.clientY,
+        panX: this.mapPanX,
+        panY: this.mapPanY,
+      }
+      this.canvas.setPointerCapture(e.pointerId)
+    })
+
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!this.mapDragging || this.viewMode !== 'map') return
+      this.mapPanX = this.mapDragStart.panX + (e.clientX - this.mapDragStart.x)
+      this.mapPanY = this.mapDragStart.panY + (e.clientY - this.mapDragStart.y)
+    })
+
+    const endMapDrag = (e: PointerEvent): void => {
+      if (!this.mapDragging) return
+      this.mapDragging = false
+      this.canvas.releasePointerCapture(e.pointerId)
+    }
+    this.canvas.addEventListener('pointerup', endMapDrag)
+    this.canvas.addEventListener('pointercancel', endMapDrag)
+  }
+
   private loop(): void {
     if (!this.running) return
 
     const now = performance.now()
-    const dt = Math.min((now - this.lastTime) / 1000, 0.05)
+    const dt = Math.min((now - this.lastTime) / 1000, 0.05) * this.timeWarp
     this.lastTime = now
 
     const width = this.canvas.clientWidth
@@ -284,8 +393,8 @@ export class LaunchScene {
       this.launchState.getStages(),
     )
 
-    const altM = altitudeMeters(this.flight, WORLD_PAD_Y, PX_PER_METER)
-    const altKm = altM / 1000
+    const altKm = altitudeAboveEarthKm(this.flight)
+    const altM = altKm * 1000
 
     updateFlight(this.flight, this.rocket, dt, {
       throttle: this.throttle,
@@ -328,6 +437,8 @@ export class LaunchScene {
     if (this.sequencePanelVisible && this.sequencePanel) {
       this.updateSequenceReadout(this.sequencePanel)
     }
+
+    this.updateFuelBars()
 
     this.draw(width, height, altKm)
     this.rafId = requestAnimationFrame(() => this.loop())
@@ -377,6 +488,7 @@ export class LaunchScene {
         WORLD_PAD_X,
         WORLD_PAD_Y,
         this.flight.angle,
+        { zoom: this.mapZoom, panX: this.mapPanX, panY: this.mapPanY },
       )
       return
     }
@@ -532,22 +644,54 @@ export class LaunchScene {
     this.ctx.setLineDash([])
   }
 
+  private updateFuelBars(): void {
+    const container = this.container.querySelector<HTMLElement>('#fuel-bars')
+    if (!container) return
+    const tanks = this.rocket.getFuelTanksOrdered()
+    container.innerHTML = tanks
+      .map(
+        (t) => `
+        <div class="fuel-bar">
+          <span class="fuel-bar__label">${t.label}</span>
+          <div class="fuel-bar__track">
+            <div class="fuel-bar__fill" style="width:${Math.round(t.fraction * 100)}%"></div>
+          </div>
+        </div>
+      `,
+      )
+      .join('')
+  }
+
   private drawFlightHud(_width: number, height: number, altKm: number): void {
-    const zone = atmosphereZone(altKm)
+    const grounded = this.flight.y >= WORLD_PAD_Y - 1
+    const surface = resolveSurfaceState(this.flight, grounded)
     const speed = Math.hypot(this.flight.vx, this.flight.vy)
+    const orbit = computeOrbitalElements(this.flight)
+    const moonKm = distanceToMoonKm(this.flight)
 
     this.ctx.fillStyle = 'rgba(0,0,0,0.55)'
-    this.ctx.fillRect(10, 10, 148, 62)
+    this.ctx.fillRect(10, 10, 168, 78)
     this.ctx.strokeStyle = 'rgba(255,255,255,0.15)'
     this.ctx.lineWidth = 1
-    this.ctx.strokeRect(10, 10, 148, 62)
+    this.ctx.strokeRect(10, 10, 168, 78)
 
     this.ctx.fillStyle = 'rgba(255,255,255,0.85)'
     this.ctx.font = '11px system-ui'
     this.ctx.textAlign = 'left'
-    this.ctx.fillText(`高度 ${altKm.toFixed(2)} km`, 18, 28)
+    this.ctx.fillText(`高度 ${surface.altKm.toFixed(2)} km`, 18, 28)
     this.ctx.fillText(`速度 ${speed.toFixed(1)} m/s`, 18, 44)
-    this.ctx.fillText(`区域 ${zoneLabel(zone)}`, 18, 60)
+    this.ctx.fillText(`参考 ${surface.label}`, 18, 60)
+    this.ctx.fillText(`距月球 ${moonKm.toFixed(0)} km`, 18, 76)
+
+    if (orbit && !orbit.isEscape && orbit.apoapsisKm > 1) {
+      this.ctx.fillStyle = 'rgba(180,200,255,0.75)'
+      this.ctx.font = '10px system-ui'
+      this.ctx.fillText(
+        `近点 ${orbit.periapsisKm.toFixed(1)} km · 远点 ${orbit.apoapsisKm.toFixed(1)} km`,
+        10,
+        height - 28,
+      )
+    }
 
     if (altKm >= KARMAN_LINE_KM * 0.8) {
       const nearKarman = altKm >= KARMAN_LINE_KM
@@ -556,7 +700,7 @@ export class LaunchScene {
       this.ctx.fillText(
         nearKarman ? '✦ 已进入太空（卡门线）' : `接近卡门线 ${KARMAN_LINE_KM} km`,
         10,
-        height - 14,
+        height - 12,
       )
     }
   }

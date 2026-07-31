@@ -57,7 +57,9 @@ export function updateFlight(
 
   if (options.engineOn) {
     const thrust = rocket.getIgnitedEngineThrust(options.throttle, options.activeEngineIds)
+    const engineCount = rocket.getActiveEngineCount(options.activeEngineIds)
     if (thrust > 0) {
+      rocket.consumeFuel(dt, options.throttle, engineCount)
       const thrustPx = (thrust / mass) * PX_PER_METER
       ax += Math.sin(state.angle) * thrustPx
       ay -= Math.cos(state.angle) * thrustPx
