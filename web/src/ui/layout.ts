@@ -24,9 +24,9 @@ export function createLayout(root: HTMLElement): LayoutElements {
             ${PART_LIST.map(
               (part) => `
                 <li class="parts-list__item" data-part-id="${part.id}">
-                  <span class="parts-list__icon parts-list__icon--${part.id}" aria-hidden="true"></span>
-                  <span class="parts-list__label">${part.label}</span>
-                </li>
+                <span class="parts-list__preview" aria-hidden="true"></span>
+                <span class="parts-list__label">${part.label}</span>
+              </li>
               `,
             ).join('')}
           </ul>

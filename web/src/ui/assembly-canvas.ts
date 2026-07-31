@@ -1,6 +1,7 @@
 import { AssemblyState } from '../assembly/assembly-state'
 import { isLaunchTargetType } from '../assembly/launch-sequence'
 import { GRID_SIZE, snapPoint } from '../assembly/grid'
+import { findSnapPair, getConnectorsForPart } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
@@ -142,12 +143,13 @@ export class AssemblyCanvas {
     if (inside) {
       const pointer = this.clientToCanvas(clientX, clientY)
       const def = getPartDefinition(this.drag.partTypeId)
-      this.state.addPart(
+      const part = this.state.addPart(
         this.drag.partTypeId,
         pointer.x - def.width / 2,
         pointer.y - def.height / 2,
         this.getAxisX(),
       )
+      this.state.finalizeMove([part.id], this.getAxisX())
       this.options.onAssemblyChange?.()
     }
 
@@ -239,11 +241,15 @@ export class AssemblyCanvas {
 
   private onPointerUp = (e: PointerEvent): void => {
     if (this.drag.mode === 'move') {
-      if (!this.drag.moved && this.drag.wasSelectedOnDown && this.drag.hitId) {
+      if (this.drag.moved) {
+        const ids = [...this.state.getSelectedIds()]
+        this.state.finalizeMove(ids, this.getAxisX())
+        this.options.onAssemblyChange?.()
+      } else if (!this.drag.moved && this.drag.wasSelectedOnDown && this.drag.hitId) {
         this.state.toggleSelection(this.drag.hitId)
-        this.draw()
       }
       this.canvas.releasePointerCapture(e.pointerId)
+      this.draw()
     }
 
     this.drag = {
@@ -281,11 +287,15 @@ export class AssemblyCanvas {
 
       for (const part of this.state.getParts()) {
         const isSelected = this.state.isSelected(part.id)
+        const isDragging = this.drag.mode === 'move' && isSelected
         const isLaunchTarget = this.options.getLaunchTargetIds?.().has(part.id) ?? false
         const isEligible =
           this.interactionMode === 'pick-target' && isLaunchTargetType(part.typeId)
 
-        drawPart(this.ctx, part, isSelected)
+        drawPart(this.ctx, part, isSelected, {
+          showConnectors: isSelected || isDragging,
+          highlightConnectors: isDragging,
+        })
 
         if (isLaunchTarget) {
           this.drawLaunchTargetBadge(part)
@@ -293,6 +303,10 @@ export class AssemblyCanvas {
         if (isEligible) {
           this.drawEligibleHighlight(part)
         }
+      }
+
+      if (this.drag.mode === 'move' && this.drag.moved) {
+        this.drawSnapPreview()
       }
 
       if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition) {
@@ -349,17 +363,36 @@ export class AssemblyCanvas {
     this.ctx.strokeRect(part.x - 2, part.y - 2, def.width + 4, def.height + 4)
   }
 
+  private drawSnapPreview(): void {
+    const selected = this.state.getSelectedParts().filter((p) => !p.mirrorOf)
+    if (selected.length === 0) return
+
+    const anchor = selected[0]!
+    const others = this.state.getParts().filter((p) => !this.state.isSelected(p.id))
+    const pair = findSnapPair(anchor, others)
+    if (!pair) return
+
+    const connectors = getConnectorsForPart(anchor)
+    this.ctx.strokeStyle = 'rgba(80, 220, 120, 0.8)'
+    this.ctx.lineWidth = 2
+    this.ctx.setLineDash([4, 4])
+    for (const c of connectors) {
+      this.ctx.beginPath()
+      this.ctx.moveTo(c.x, c.y)
+      this.ctx.lineTo(c.x + pair.dx, c.y + pair.dy)
+      this.ctx.stroke()
+    }
+    this.ctx.setLineDash([])
+  }
+
   private drawGhost(typeId: PartTypeId, pointer: PointerPosition): void {
     const def = getPartDefinition(typeId)
     const snapped = snapPoint(pointer.x - def.width / 2, pointer.y - def.height / 2)
-    const ghost: PartInstance = {
-      id: 'ghost',
-      typeId,
-      x: snapped.x,
-      y: snapped.y,
-    }
-    this.ctx.globalAlpha = 0.55
-    drawPart(this.ctx, ghost, false)
+    this.ctx.globalAlpha = 0.45
+    drawPart(this.ctx, { id: 'ghost', typeId, x: snapped.x, y: snapped.y }, false, {
+      showConnectors: true,
+      highlightConnectors: true,
+    })
     this.ctx.globalAlpha = 1
   }
 }
