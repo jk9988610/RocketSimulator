@@ -49,8 +49,8 @@ body {
 .parts-panel {
   display: flex;
   flex-direction: column;
-  width: clamp(140px, 22vw, 220px);
-  min-width: 140px;
+  width: clamp(112px, 26vw, 200px);
+  min-width: 112px;
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
 }
@@ -76,55 +76,72 @@ body {
   flex-shrink: 0;
 }
 
-.parts-list {
-  list-style: none;
-  margin: 0;
-  padding: 6px 0;
+/* ── 物件背包栏 ── */
+
+.parts-inventory {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 12px;
   overflow-y: auto;
   flex: 1;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
 
-.parts-list__item {
+.inventory-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
   cursor: grab;
-  transition: background 0.12s;
   touch-action: none;
+  transition: background 0.12s, border-color 0.12s;
 }
 
-.parts-list__item:hover {
+.inventory-item:hover {
   background: rgba(255, 255, 255, 0.05);
+  border-color: #3a3a48;
 }
 
-.parts-list__item:active {
+.inventory-item:active {
   cursor: grabbing;
 }
 
-.parts-list__preview {
+.inventory-item.dragging {
+  background: rgba(59, 158, 255, 0.12);
+  border-color: rgba(59, 158, 255, 0.45);
+}
+
+.inventory-item__title {
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.inventory-item__preview {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  background: #141418;
-  border: 1px solid #3a3a48;
-  border-radius: 4px;
-  overflow: hidden;
+  width: 100%;
+  min-height: 0;
 }
 
-.parts-list__preview-canvas {
+.inventory-item__canvas {
   display: block;
-  width: 32px;
-  height: 32px;
-}
-
-.parts-list__label {
-  font-size: 13px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .parts-panel__footer {
@@ -362,25 +379,6 @@ body {
   color: #ffd23c;
 }
 
-.parts-list__preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  background: #141418;
-  border: 1px solid #3a3a48;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.parts-list__preview-canvas {
-  display: block;
-  width: 32px;
-  height: 32px;
-}
-
 .drag-ghost {
   position: fixed;
   z-index: 10000;
@@ -395,16 +393,12 @@ body.is-dragging-part {
   -webkit-user-select: none;
 }
 
-body.is-dragging-part .parts-list {
+body.is-dragging-part .parts-inventory {
   overflow: hidden;
 }
 
 .drag-ghost canvas {
   display: block;
-}
-
-.parts-list__item.dragging {
-  background: rgba(59, 158, 255, 0.18);
 }
 
 #assembly-canvas {

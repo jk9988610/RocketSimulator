@@ -20,16 +20,16 @@ export function createLayout(root: HTMLElement): LayoutElements {
       <aside class="parts-panel" id="parts-panel">
         <div id="parts-view" class="side-panel-view">
           <header class="parts-panel__header">物件栏</header>
-          <ul class="parts-list" role="list">
+          <div class="parts-inventory" role="list">
             ${PART_LIST.map(
               (part) => `
-                <li class="parts-list__item" data-part-id="${part.id}">
-                <span class="parts-list__preview" aria-hidden="true"></span>
-                <span class="parts-list__label">${part.label}</span>
-              </li>
+                <div class="inventory-item" data-part-id="${part.id}" role="listitem">
+                  <div class="inventory-item__title">${part.label}</div>
+                  <div class="inventory-item__preview" aria-hidden="true"></div>
+                </div>
               `,
             ).join('')}
-          </ul>
+          </div>
         </div>
         <div id="launch-sequence-view" class="side-panel-view side-panel-view--hidden">
           <header class="parts-panel__header">启动链设计</header>

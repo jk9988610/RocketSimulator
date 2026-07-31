@@ -9,8 +9,8 @@ export function bindPartsPanelDrag(
   canvas: AssemblyCanvas,
 ): void {
   const ghost = new DragGhost()
-  const list = panel.querySelector<HTMLElement>('.parts-list')
-  if (!list) return
+  const inventory = panel.querySelector<HTMLElement>('.parts-inventory')
+  if (!inventory) return
 
   let activeTypeId: PartTypeId | null = null
   let pointerId: number | null = null
@@ -65,11 +65,11 @@ export function bindPartsPanelDrag(
     cleanup()
   }
 
-  list.addEventListener(
+  inventory.addEventListener(
     'pointerdown',
     (e) => {
-      const item = (e.target as HTMLElement).closest<HTMLElement>('.parts-list__item')
-      if (!item || !list.contains(item)) return
+      const item = (e.target as HTMLElement).closest<HTMLElement>('.inventory-item')
+      if (!item || !inventory.contains(item)) return
 
       const typeId = item.dataset.partId as PartTypeId | undefined
       if (!typeId) return
