@@ -1,5 +1,9 @@
 import { COMMAND_POD_INSET_RATIO, getPartDefinition } from './definitions'
 import { getConnectorsForPart } from './connection-points'
+import {
+  COMMAND_POD_GEOMETRY,
+  traceEngineShape,
+} from './part-geometry'
 import type { PartInstance, PartTypeId } from './types'
 
 export interface DrawPartOptions {
@@ -179,6 +183,10 @@ function strokePartOutline(
       ctx.closePath()
       ctx.stroke()
       break
+    case 'engine':
+      traceEngineShape(ctx, x, y, w, h)
+      ctx.stroke()
+      break
     default:
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
   }
@@ -195,7 +203,7 @@ function drawCommandPod(
   physical: boolean,
 ): void {
   const inset = w * COMMAND_POD_INSET_RATIO
-  const topY = y + h * 0.16
+  const topY = y + h * COMMAND_POD_GEOMETRY.topYRatio
 
   const grad = ctx.createLinearGradient(x, y, x + w, y + h)
   grad.addColorStop(0, lighten(color, 14))
@@ -234,7 +242,7 @@ function drawCommandPodOutline(
   h: number,
 ): void {
   const inset = w * COMMAND_POD_INSET_RATIO
-  const topY = y + h * 0.16
+  const topY = y + h * COMMAND_POD_GEOMETRY.topYRatio
   ctx.beginPath()
   ctx.moveTo(x + inset, topY)
   ctx.lineTo(x + w - inset, topY)
@@ -481,32 +489,33 @@ function drawEngine(
   accent: string,
   physical: boolean,
 ): void {
-  ctx.fillStyle = color
-  ctx.fillRect(x, y, w, h * 0.68)
-  ctx.beginPath()
-  ctx.moveTo(x + 4, y + h * 0.68)
-  ctx.lineTo(x + w / 2, y + h)
-  ctx.lineTo(x + w - 4, y + h * 0.68)
-  ctx.closePath()
+  const grad = ctx.createLinearGradient(x, y, x + w, y + h)
+  grad.addColorStop(0, lighten(color, 10))
+  grad.addColorStop(1, darken(color, 6))
+  ctx.fillStyle = grad
+  traceEngineShape(ctx, x, y, w, h)
   ctx.fill()
 
   if (!physical) {
     ctx.strokeStyle = accent
     ctx.lineWidth = 2
-    ctx.strokeRect(x + 4, y, w - 8, h * 0.68)
+    traceEngineShape(ctx, x, y, w, h)
+    ctx.stroke()
+
+    const nozzleY = y + h
     ctx.fillStyle = accent
     ctx.beginPath()
-    ctx.moveTo(x + w / 2 - 7, y + h)
-    ctx.lineTo(x + w / 2, y + h + 12)
-    ctx.lineTo(x + w / 2 + 7, y + h)
+    ctx.moveTo(x + w / 2 - 6, nozzleY)
+    ctx.lineTo(x + w / 2, nozzleY + 10)
+    ctx.lineTo(x + w / 2 + 6, nozzleY)
     ctx.closePath()
     ctx.fill()
   } else {
     ctx.fillStyle = '#3a3a48'
     ctx.beginPath()
-    ctx.moveTo(x + w / 2 - 5, y + h)
-    ctx.lineTo(x + w / 2, y + h + 6)
-    ctx.lineTo(x + w / 2 + 5, y + h)
+    ctx.moveTo(x + w / 2 - 4, y + h)
+    ctx.lineTo(x + w / 2, y + h + 5)
+    ctx.lineTo(x + w / 2 + 4, y + h)
     ctx.closePath()
     ctx.fill()
   }
@@ -536,7 +545,7 @@ export function getCommandPodTopAnchors(
   podH = 64,
 ): { leftX: number; rightX: number; topY: number; centerX: number } {
   const inset = podW * COMMAND_POD_INSET_RATIO
-  const topY = podY + podH * 0.16
+  const topY = podY + podH * COMMAND_POD_GEOMETRY.topYRatio
   return {
     leftX: podX + inset,
     rightX: podX + podW - inset,
