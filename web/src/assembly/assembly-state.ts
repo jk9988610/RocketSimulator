@@ -86,7 +86,9 @@ export class AssemblyState {
   }
 
   importParts(parts: PartInstance[]): void {
-    this.parts = parts.map((p) => ({ ...p }))
+    this.parts = parts
+      .filter((p) => (p.typeId as string) !== 'frustum')
+      .map((p) => ({ ...p }))
     this.selectedIds.clear()
     syncNextIdFromParts(this.parts)
   }

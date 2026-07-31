@@ -1,14 +1,6 @@
 import type { PartDefinition, PartTypeId } from './types'
 
 export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
-  frustum: {
-    id: 'frustum',
-    label: '圆台',
-    width: 64,
-    height: 48,
-    color: '#c8c8d0',
-    accent: '#9898a8',
-  },
   'command-pod': {
     id: 'command-pod',
     label: '指令仓',

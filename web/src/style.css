@@ -356,7 +356,6 @@ body {
   opacity: 0.7;
 }
 
-.parts-list__icon--frustum { background: linear-gradient(135deg, #c8c8d0, #9898a8); }
 .parts-list__icon--command-pod { background: linear-gradient(135deg, #f0f0f4, #3b9eff); }
 .parts-list__icon--parachute { background: linear-gradient(135deg, #ff6b6b, #cc4444); }
 .parts-list__icon--heat-shield { background: linear-gradient(135deg, #c49a1a, #8b6914); }
@@ -416,10 +415,14 @@ body {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   background: rgba(26, 26, 30, 0.85);
-  color: var(--text-muted);
+  color: var(--text);
   font-size: 13px;
-  cursor: not-allowed;
-  opacity: 0.6;
+  cursor: pointer;
+}
+
+.map-toggle-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .tilt-controls {

@@ -1,5 +1,4 @@
 export type PartTypeId =
-  | 'frustum'
   | 'command-pod'
   | 'parachute'
   | 'heat-shield'

@@ -64,7 +64,7 @@ export function createLayout(root: HTMLElement): LayoutElements {
     <div id="launch-scene" class="launch-scene launch-scene--hidden">
       <canvas id="launch-canvas" aria-label="发射台"></canvas>
       <button type="button" class="back-btn" id="back-to-assembly">← 返回组装</button>
-      <button type="button" class="map-toggle-btn" id="map-toggle" disabled title="地图模式（M4）">现场</button>
+      <button type="button" class="map-toggle-btn" id="map-toggle">现场</button>
       <div class="tilt-controls">
         <button type="button" class="tilt-btn" id="tilt-left" aria-label="左倾">←</button>
         <button type="button" class="tilt-btn" id="tilt-right" aria-label="右倾">→</button>
