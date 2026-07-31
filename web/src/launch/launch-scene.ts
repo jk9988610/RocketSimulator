@@ -9,6 +9,7 @@ import {
 } from './flight-physics'
 import {
   FlightRocket,
+  computePartsMassKg,
   getActiveStageEngineIds,
 } from './rocket-body'
 import { drawMapView, computeMapLayout, panToFocusTarget, clampMapZoom, type MapFocusTarget, type ViewMode } from './map-renderer'
@@ -25,6 +26,7 @@ import {
   resolveHudReadout,
 } from './orbit-mechanics'
 import { KARMAN_LINE_KM } from './atmosphere'
+import { heatBarColor, HEAT_DISPLAY_THRESHOLD, updateHeatLevel } from './thermal'
 import { computeGeocentricState } from './cosmos-simulation'
 import { computeGravityAcceleration } from './gravity'
 import {
@@ -78,6 +80,7 @@ export class LaunchScene {
   private mapFocusTarget: MapFocusTarget = 'rocket'
   private cosmosSimTimeS = 0
   private parachuteAdvisoryShown = false
+  private heatLevel = 0
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -137,6 +140,7 @@ export class LaunchScene {
     this.statusMessage = ''
     this.cosmosSimTimeS = 0
     this.parachuteAdvisoryShown = false
+    this.heatLevel = 0
     this.updateFuelBars()
     const engineSwitch = this.container.querySelector<HTMLButtonElement>('#engine-switch')
     const throttle = this.container.querySelector<HTMLInputElement>('#throttle')
@@ -483,8 +487,14 @@ export class LaunchScene {
       this.updateSequenceReadout(this.sequencePanel)
     }
 
-    this.updateFuelBars()
+    const speedMs = Math.hypot(this.flight.vx, this.flight.vy)
+    if (dt > 0) {
+      this.heatLevel = updateHeatLevel(this.heatLevel, speedMs, altKm, dt)
+    }
+
     this.updateFlightHud(grounded, verticalSpeedMs)
+    this.updateFuelBars()
+    this.updateHeatBar()
 
     if (this.viewMode === 'map' && this.mapFocusTarget !== 'free') {
       const layout = computeMapLayout(
@@ -518,6 +528,7 @@ export class LaunchScene {
       for (const p of detached) p.detached = true
 
       const { centerX, bottomY } = this.rocket.bounds
+      const stageMass = computePartsMassKg(detached)
       this.floatingStages.push(
         createFloatingStage(
           detached,
@@ -528,6 +539,7 @@ export class LaunchScene {
           this.flight.angle,
           centerX,
           bottomY,
+          stageMass,
         ),
       )
       this.showStatus('级间分离', 2.5)
@@ -579,26 +591,24 @@ export class LaunchScene {
 
     for (const part of this.rocket.parts) {
       if (part.detached || part.envelopedBy) continue
+      if (part.parachuteDeployed && part.typeId === 'parachute') continue
+
       const instance: PartInstance = part
       drawPart(this.ctx, instance, false, { ringSpan: part.ringSpan, physical: true })
       if (part.ignited && part.typeId === 'engine' && this.engineOn && this.throttle > 0) {
         this.drawEngineFlame(part)
-      }
-      if (part.parachuteDeployed && part.typeId === 'parachute') {
-        this.drawDeployedParachute(part)
       }
     }
 
     const commandPod = this.rocket.parts.find(
       (p) => p.typeId === 'command-pod' && !p.detached,
     )
-    if (commandPod) {
-      const deployedChute = this.rocket.parts.find(
-        (p) => p.typeId === 'parachute' && p.parachuteDeployed && !p.detached,
-      )
-      if (deployedChute) {
-        this.drawParachuteRigging(deployedChute, commandPod)
-      }
+    const deployedChute = this.rocket.parts.find(
+      (p) => p.typeId === 'parachute' && p.parachuteDeployed && !p.detached,
+    )
+    if (commandPod && deployedChute) {
+      this.drawParachuteRigging(deployedChute, commandPod)
+      this.drawDeployedParachute(deployedChute)
     }
 
     this.ctx.restore()
@@ -718,27 +728,18 @@ export class LaunchScene {
     const anchors = getCommandPodTopAnchors(pod.x, pod.y, podDef.width, podDef.height)
     const chuteDef = getPartDefinition('parachute')
     const cx = chute.x + chuteDef.width / 2
-    const canopyBaseY = chute.y
     const expandR = chuteDef.width * 1.35
-    const canopyR = expandR * 0.72
-    const canopyY = canopyBaseY - canopyR * 0.55
+    const lift = 78
+    const chordY = chute.y - lift
+    const leftChord = { x: cx - expandR, y: chordY }
+    const rightChord = { x: cx + expandR, y: chordY }
 
-    const rigPoints = [
-      { x: anchors.leftX, y: anchors.topY },
-      { x: anchors.centerX, y: anchors.topY },
-      { x: anchors.rightX, y: anchors.topY },
-    ]
-    const canopyAttach = [
-      { x: cx - expandR * 0.55, y: canopyY },
-      { x: cx, y: canopyY - canopyR * 0.15 },
-      { x: cx + expandR * 0.55, y: canopyY },
-    ]
-
-    this.ctx.strokeStyle = 'rgba(220, 220, 230, 0.75)'
-    this.ctx.lineWidth = 1.2
-    for (let i = 0; i < rigPoints.length; i++) {
-      const from = rigPoints[i]!
-      const to = canopyAttach[i]!
+    this.ctx.strokeStyle = 'rgba(210, 212, 225, 0.85)'
+    this.ctx.lineWidth = 1.3
+    for (const [from, to] of [
+      [{ x: anchors.leftX, y: anchors.topY }, leftChord],
+      [{ x: anchors.rightX, y: anchors.topY }, rightChord],
+    ]) {
       this.ctx.beginPath()
       this.ctx.moveTo(from.x, from.y)
       this.ctx.lineTo(to.x, to.y)
@@ -749,22 +750,37 @@ export class LaunchScene {
   private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {
     const def = getPartDefinition(part.typeId)
     const cx = part.x + def.width / 2
-    const baseY = part.y
     const expandR = def.width * 1.35
     const canopyR = expandR * 0.72
-    const canopyCenterY = baseY - canopyR * 0.55
+    const lift = 78
+    const chordY = part.y - lift
+    const arcCy = chordY
 
     this.ctx.fillStyle = 'rgba(255, 90, 90, 0.82)'
     this.ctx.beginPath()
-    this.ctx.arc(cx, canopyCenterY + canopyR * 0.5, expandR, Math.PI, 0)
+    this.ctx.arc(cx, arcCy, expandR, Math.PI, 0)
     this.ctx.closePath()
     this.ctx.fill()
 
     this.ctx.fillStyle = 'rgba(255, 180, 180, 0.45)'
     this.ctx.beginPath()
-    this.ctx.arc(cx, canopyCenterY + canopyR * 0.5, canopyR, Math.PI, 0)
+    this.ctx.arc(cx, arcCy, canopyR, Math.PI, 0)
     this.ctx.closePath()
     this.ctx.fill()
+  }
+
+  private updateHeatBar(): void {
+    const wrap = this.container.querySelector<HTMLElement>('#temp-bar-wrap')
+    const fill = this.container.querySelector<HTMLElement>('#temp-bar-fill')
+    if (!wrap || !fill) return
+
+    const show = this.heatLevel >= HEAT_DISPLAY_THRESHOLD
+    wrap.classList.toggle('temp-bar-wrap--hidden', !show)
+    if (!show) return
+
+    const pct = Math.round(this.heatLevel * 100)
+    fill.style.width = `${pct}%`
+    fill.style.background = heatBarColor(this.heatLevel)
   }
 
   private updateFuelBars(): void {
@@ -810,7 +826,6 @@ export class LaunchScene {
     const altLabelEl = this.container.querySelector<HTMLElement>('#hud-alt-label')
     const altEl = this.container.querySelector<HTMLElement>('#hud-altitude')
     const vvelEl = this.container.querySelector<HTMLElement>('#hud-vvel')
-    const chuteEl = this.container.querySelector<HTMLElement>('#hud-chute')
     const parachute = this.rocket.hasParachuteDeployed()
     if (speedEl) speedEl.textContent = `${hud.speedMs.toFixed(1)} m/s`
     if (altLabelEl) altLabelEl.textContent = hud.distanceLabel
@@ -819,10 +834,6 @@ export class LaunchScene {
       const label = vvel > 0.5 ? '↓' : vvel < -0.5 ? '↑' : ''
       vvelEl.textContent = `${label}${Math.abs(vvel).toFixed(1)} m/s`
       vvelEl.classList.toggle('flight-hud__val--warn', vvel > 20 && !parachute && !onGround)
-    }
-    if (chuteEl) {
-      chuteEl.textContent = parachute ? '已展开' : '未展开'
-      chuteEl.classList.toggle('flight-hud__val--ok', parachute)
     }
   }
 

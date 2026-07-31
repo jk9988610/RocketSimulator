@@ -1,4 +1,4 @@
-import { getPartDefinition } from '../parts/definitions'
+import { collectConnectedAssembly, getNeighborsViaKinds } from '../assembly/part-connections'
 import type { FlightPartState } from './rocket-body'
 
 export interface FloatingStage {
@@ -10,87 +10,38 @@ export interface FloatingStage {
   angle: number
   spin: number
   age: number
-}
-
-function partsOverlapColumn(a: FlightPartState, b: FlightPartState): boolean {
-  const da = getPartDefinition(a.typeId)
-  const db = getPartDefinition(b.typeId)
-  const overlap =
-    Math.min(a.x + da.width, b.x + db.width) - Math.max(a.x, b.x)
-  return overlap > Math.min(da.width, db.width) * 0.3
+  massKg: number
 }
 
 /**
- * 级间分离：连接器与下层/侧枝（枝干）一起脱落，上方主干保留。
- * 包含：连接器本体、同列其下部件、被该环包裹的引擎/隔热片、径向侧枝。
+ * 级间分离：从连接器「脱落侧」出发，沿物理对接关系取连通整体。
+ * 例如：连接器—燃料箱—（鼻锥+引擎）作为一体脱落，上方主干保留。
  */
 export function collectDetachedStageParts(
   connector: FlightPartState,
   parts: readonly FlightPartState[],
 ): FlightPartState[] {
-  const splitY = connector.y
-  const detachedIds = new Set<string>([connector.id])
+  const detachKinds =
+    connector.typeId === 'radial-connector'
+      ? (['bottom', 'left', 'right'] as const)
+      : (['bottom'] as const)
 
-  for (const p of parts) {
-    if (p.detached || p.id === connector.id) continue
+  const seeds = getNeighborsViaKinds(connector, [...detachKinds], parts)
+  const seedIds = new Set<string>([connector.id, ...seeds.map((p) => p.id)])
 
-    const inColumnBelow =
-      partsOverlapColumn(p, connector) && p.y >= splitY - 4
-
-    if (inColumnBelow) {
-      detachedIds.add(p.id)
-    }
-  }
+  const component = collectConnectedAssembly(seedIds, parts)
 
   if (connector.typeId === 'ring-connector') {
+    const ids = new Set(component.map((p) => p.id))
     for (const p of parts) {
-      if (p.envelopedBy === connector.id) {
-        detachedIds.add(p.id)
+      if (p.envelopedBy === connector.id && !ids.has(p.id)) {
+        component.push(p)
+        ids.add(p.id)
       }
     }
   }
 
-  if (connector.typeId === 'radial-connector') {
-    const connDef = getPartDefinition(connector.typeId)
-    const connRight = connector.x + connDef.width
-    for (const p of parts) {
-      if (p.detached || p.id === connector.id) continue
-      const sideAttached =
-        (p.x + getPartDefinition(p.typeId).width >= connector.x - 8 &&
-          p.x <= connRight + 8 &&
-          Math.abs(
-            p.y +
-              (p.ringSpan ?? getPartDefinition(p.typeId).height) / 2 -
-              (connector.y + connDef.height / 2),
-          ) < connDef.height * 0.75) ||
-        (partsOverlapColumn(p, connector) && p.y >= splitY - 4)
-      if (sideAttached) {
-        detachedIds.add(p.id)
-      }
-    }
-  }
-
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const p of parts) {
-      if (p.detached || !p.envelopedBy) continue
-      if (detachedIds.has(p.envelopedBy) && !detachedIds.has(p.id)) {
-        detachedIds.add(p.id)
-        changed = true
-      }
-    }
-  }
-
-  return parts.filter((p) => detachedIds.has(p.id) && !p.detached)
-}
-
-/** @deprecated 使用 collectDetachedStageParts */
-export function collectPartsBelowConnector(
-  connector: FlightPartState,
-  parts: readonly FlightPartState[],
-): FlightPartState[] {
-  return collectDetachedStageParts(connector, parts)
+  return component as FlightPartState[]
 }
 
 export function createFloatingStage(
@@ -102,6 +53,7 @@ export function createFloatingStage(
   flightAngle: number,
   _boundsCenterX: number,
   boundsBottomY: number,
+  massKg: number,
 ): FloatingStage {
   let minY = Infinity
   for (const p of parts) {
@@ -119,6 +71,7 @@ export function createFloatingStage(
     angle: flightAngle + (Math.random() - 0.5) * 0.15,
     spin: (Math.random() - 0.5) * 0.6,
     age: 0,
+    massKg: Math.max(massKg, 1),
   }
 }
 
@@ -128,9 +81,10 @@ export function updateFloatingStage(
   gravity: number,
 ): void {
   stage.age += dt
+  const massFactor = Math.sqrt(1200 / stage.massKg)
   stage.vy += gravity * dt
-  stage.x += stage.vx * dt * 32
-  stage.y += stage.vy * dt * 32
+  stage.x += stage.vx * dt * 32 * massFactor
+  stage.y += stage.vy * dt * 32 * massFactor
   stage.angle += stage.spin * dt
   stage.vx *= 1 - 0.04 * dt
   stage.vy *= 1 - 0.01 * dt

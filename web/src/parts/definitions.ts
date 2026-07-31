@@ -61,7 +61,7 @@ export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
   'nose-cone': {
     id: 'nose-cone',
     label: '鼻锥',
-    width: 48,
+    width: 64,
     height: 48,
     color: '#d8d8e0',
     accent: '#a8a8b8',

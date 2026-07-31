@@ -43,6 +43,20 @@ const FUEL_MASS_PER_UNIT = 0.5
 const ENGINE_THRUST = 18000
 const FUEL_BURN_RATE = 2.8
 
+export function computePartsMassKg(parts: readonly FlightPartState[]): number {
+  return parts
+    .filter((p) => !p.detached)
+    .reduce((sum, p) => sum + getPartMass(p), 0)
+}
+
+export function getPartMass(part: FlightPartState): number {
+  let mass = PART_DRY_MASS[part.typeId]
+  if (part.typeId === 'fuel-tank' && part.fuel !== undefined) {
+    mass += part.fuel * FUEL_MASS_PER_UNIT
+  }
+  return mass
+}
+
 export class FlightRocket {
   readonly parts: FlightPartState[]
   bounds: RocketBounds
@@ -72,15 +86,7 @@ export class FlightRocket {
   }
 
   getTotalMass(): number {
-    return this.parts
-      .filter((p) => !p.detached)
-      .reduce((sum, p) => {
-        let mass = PART_DRY_MASS[p.typeId]
-        if (p.typeId === 'fuel-tank' && p.fuel !== undefined) {
-          mass += p.fuel * FUEL_MASS_PER_UNIT
-        }
-        return sum + mass
-      }, 0)
+    return computePartsMassKg(this.parts)
   }
 
   getFuelTanksOrdered(): FuelTankStatus[] {
