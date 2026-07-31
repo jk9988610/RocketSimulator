@@ -5,12 +5,14 @@ import {
   getPartBottomY,
   getPartBounds,
   getPartTopY,
+  isStackedBelow,
   isStackedOn,
   RING_GEOMETRY,
 } from '../parts/part-geometry'
 import type { PartInstance } from '../parts/types'
 
 const ANCHOR_TYPES = new Set(['command-pod', 'fuel-tank'])
+const BELOW_BLOCKS_WRAP = new Set(['fuel-tank', 'engine'])
 
 function partCenterX(part: PartInstance): number {
   return getPartBounds(part).centerX
@@ -34,37 +36,36 @@ function clearEnvelopeState(parts: PartInstance[]): void {
   for (const part of parts) {
     delete part.envelopedBy
     if (part.typeId === 'ring-connector') {
+      if (part.ringSpan !== undefined && part.ringPlacementTop !== undefined) {
+        part.y = part.ringPlacementTop
+      }
       delete part.ringSpan
       delete part.ringBottomLy
     }
   }
 }
 
-function findAnchorBottomY(
+function findPartBelow(
   column: readonly PartInstance[],
-  belowY: number,
-): number | null {
-  let best: number | null = null
-  for (const part of column) {
-    if (!ANCHOR_TYPES.has(part.typeId)) continue
-    const bottom = getPartBottomY(part)
-    if (bottom > belowY + CONNECTOR_ALIGN_TOL) continue
-    if (best === null || bottom < best) best = bottom
-  }
-  return best
+  ring: PartInstance,
+  placedBottom: number,
+): PartInstance | null {
+  return (
+    column.find(
+      (p) =>
+        p.id !== ring.id &&
+        BELOW_BLOCKS_WRAP.has(p.typeId) &&
+        isStackedBelow(p, placedBottom),
+    ) ?? null
+  )
 }
 
 function resolveSpanTopFromEngine(
   engine: PartInstance,
   others: readonly PartInstance[],
-  column: readonly PartInstance[],
-  ringPlacedTop: number,
 ): number | null {
   const above = findConnectorPartner(engine, 'top', others)
-  if (above?.typeId === 'fuel-tank') {
-    return getPartBottomY(above)
-  }
-  if (above?.typeId === 'command-pod') {
+  if (above?.typeId === 'fuel-tank' || above?.typeId === 'command-pod') {
     return getPartBottomY(above)
   }
   if (above?.typeId === 'heat-shield') {
@@ -72,9 +73,24 @@ function resolveSpanTopFromEngine(
     if (pod?.typeId === 'command-pod') {
       return getPartBottomY(pod)
     }
-    return findAnchorBottomY(column, ringPlacedTop)
   }
   return null
+}
+
+/** 拖动环时收起延伸、释放被包裹部件 */
+export function collapseRingConnector(ring: PartInstance, parts: PartInstance[]): void {
+  if (ring.typeId !== 'ring-connector') return
+
+  for (const p of parts) {
+    if (p.envelopedBy === ring.id) delete p.envelopedBy
+  }
+
+  if (ring.ringPlacementTop !== undefined) {
+    ring.y = ring.ringPlacementTop
+  }
+
+  delete ring.ringSpan
+  delete ring.ringBottomLy
 }
 
 export function updateRingEnvelopes(parts: PartInstance[]): void {
@@ -87,51 +103,51 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
     const column = getColumnParts(parts, ring)
     const others = parts.filter((p) => p.id !== ring.id && !p.mirrorOf)
 
-    const placedTop = ring.y
-    const placedBottom = ring.y + ringDef.height
+    const placementTop = ring.y
+    const placedBottom = placementTop + ringDef.height
+    ring.ringPlacementTop = placementTop
 
-    let spanTop = placedTop
+    const partBelow = findPartBelow(column, ring, placedBottom)
+    if (partBelow !== null) continue
+
+    let spanTop = placementTop
     const spanBottom = placedBottom
     const toEnvelop: PartInstance[] = []
 
     const engineAbove = column.find(
-      (p) => p.typeId === 'engine' && isStackedOn(p, placedTop),
+      (p) => p.typeId === 'engine' && isStackedOn(p, placementTop),
+    )
+    const heatAbove = column.find(
+      (p) => p.typeId === 'heat-shield' && isStackedOn(p, placementTop),
     )
 
     if (engineAbove) {
-      const targetTop = resolveSpanTopFromEngine(engineAbove, others, column, placedTop)
+      const targetTop = resolveSpanTopFromEngine(engineAbove, others)
       if (targetTop === null) continue
       spanTop = targetTop
       toEnvelop.push(engineAbove)
+    } else if (heatAbove) {
+      const pod = findConnectorPartner(heatAbove, 'top', others)
+      if (pod?.typeId !== 'command-pod') continue
+      spanTop = getPartBottomY(pod)
+      toEnvelop.push(heatAbove)
     } else {
-      const heatAbove = column.find(
-        (p) => p.typeId === 'heat-shield' && isStackedOn(p, placedTop),
+      const anchorAbove = column.find(
+        (p) => ANCHOR_TYPES.has(p.typeId) && isStackedOn(p, placementTop),
       )
-      if (heatAbove) {
-        toEnvelop.push(heatAbove)
-        const pod = findConnectorPartner(heatAbove, 'top', others)
-        if (pod?.typeId === 'command-pod') {
-          spanTop = getPartBottomY(pod)
-        } else {
-          const anchorY = findAnchorBottomY(column, placedTop)
-          if (anchorY !== null) spanTop = anchorY
-        }
-      } else {
-        const anchorAbove = column.find(
-          (p) => ANCHOR_TYPES.has(p.typeId) && isStackedOn(p, placedTop),
-        )
-        if (!anchorAbove) continue
-        spanTop = getPartBottomY(anchorAbove)
-      }
+      if (!anchorAbove) continue
+      spanTop = getPartBottomY(anchorAbove)
     }
 
     const span = spanBottom - spanTop
     if (span < RING_GEOMETRY.height - 0.5) continue
-    if (spanTop >= placedTop - 0.5 && toEnvelop.length === 0) continue
+
+    const needsExtension = spanTop < placementTop - CONNECTOR_ALIGN_TOL
+    if (!needsExtension && toEnvelop.length === 0) continue
 
     const ref =
       toEnvelop[0] ??
-      column.find((p) => ANCHOR_TYPES.has(p.typeId) && isStackedOn(p, placedTop)) ??
+      column.find((p) => ANCHOR_TYPES.has(p.typeId) && isStackedOn(p, placementTop)) ??
       ring
 
     ring.x = partCenterX(ref) - ringDef.width / 2
@@ -142,7 +158,7 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
     for (const p of toEnvelop) {
       const top = getPartTopY(p)
       const bottom = getPartBottomY(p)
-      if (top >= spanTop - 0.5 && bottom <= spanBottom + 0.5) {
+      if (top >= spanTop - CONNECTOR_ALIGN_TOL && bottom <= spanBottom + CONNECTOR_ALIGN_TOL) {
         p.envelopedBy = ring.id
       }
     }

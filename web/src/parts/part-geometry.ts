@@ -112,6 +112,14 @@ export function isStackedOn(
   return Math.abs(getPartBottomY(upper) - lowerTopY) <= CONNECTOR_ALIGN_TOL
 }
 
+/** 下方部件顶端与宿主底端是否贴合 */
+export function isStackedBelow(
+  lower: PartInstance,
+  hostBottomY: number,
+): boolean {
+  return Math.abs(getPartTopY(lower) - hostBottomY) <= CONNECTOR_ALIGN_TOL
+}
+
 export function getCommandPodBottomY(partY: number, partHeight: number): number {
   return partY + partHeight * COMMAND_POD_GEOMETRY.bottomYRatio
 }

@@ -29,6 +29,8 @@ export interface PartInstance {
   ringSpan?: number
   /** 圆环底端连接器相对顶部的纵向偏移（默认等于 ringSpan） */
   ringBottomLy?: number
+  /** 未延伸时环顶端的放置 Y（延伸后用于复位） */
+  ringPlacementTop?: number
 }
 
 export interface PointerPosition {
