@@ -11,7 +11,7 @@ import {
   FlightRocket,
   getActiveStageEngineIds,
 } from './rocket-body'
-import { drawMapView, type ViewMode } from './map-renderer'
+import { drawMapView, computeMapLayout, panToFocusTarget, type MapFocusTarget, type ViewMode } from './map-renderer'
 import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
 import {
@@ -21,9 +21,7 @@ import {
 } from './landing'
 import {
   altitudeAboveEarthKm,
-  computeOrbitalElements,
-  distanceToMoonKm,
-  resolveSurfaceState,
+  resolveHudReadout,
 } from './orbit-mechanics'
 import { gravityAtAltitude, KARMAN_LINE_KM } from './atmosphere'
 import {
@@ -70,9 +68,12 @@ export class LaunchScene {
   private landingResult: LandingResult = 'none'
   private floatingStages: FloatingStage[] = []
   private timeWarp = 1
+  private paused = false
   private mapZoom = 1
   private mapPanX = 0
   private mapPanY = 0
+  private mapFocusTarget: MapFocusTarget = 'rocket'
+  private mapFocusActive = true
   private mapDragging = false
   private mapDragStart = { x: 0, y: 0, panX: 0, panY: 0 }
 
@@ -113,6 +114,7 @@ export class LaunchScene {
     this.running = true
     this.lastTime = performance.now()
     this.updateFuelBars()
+    this.updateFlightHud()
     this.loop()
   }
 
@@ -172,15 +174,22 @@ export class LaunchScene {
     const menuBtn = this.container.querySelector<HTMLButtonElement>('#launch-menu-btn')!
     const menuPanel = this.container.querySelector<HTMLElement>('#launch-menu')!
     const warpSlower = this.container.querySelector<HTMLButtonElement>('#warp-slower')!
+    const warpPause = this.container.querySelector<HTMLButtonElement>('#warp-pause')!
     const warpFaster = this.container.querySelector<HTMLButtonElement>('#warp-faster')!
     const warpLabel = this.container.querySelector<HTMLElement>('#warp-label')!
     const mapToggle = this.container.querySelector<HTMLButtonElement>('#map-toggle')!
+    const mapFocusSelect = this.container.querySelector<HTMLSelectElement>('#map-focus-select')!
 
     this.sequencePanel = sequencePanel
 
+    const refreshWarpLabel = (): void => {
+      if (!warpLabel) return
+      warpLabel.textContent = this.paused ? '暂停' : `${this.timeWarp}×`
+    }
+
     const setWarp = (factor: number): void => {
       this.timeWarp = Math.max(0.25, Math.min(8, factor))
-      if (warpLabel) warpLabel.textContent = `${this.timeWarp}×`
+      refreshWarpLabel()
     }
 
     menuBtn.addEventListener('click', (e) => {
@@ -234,13 +243,44 @@ export class LaunchScene {
       this.onBack()
     })
 
-    warpSlower.addEventListener('click', () => setWarp(this.timeWarp / 2))
-    warpFaster.addEventListener('click', () => setWarp(this.timeWarp * 2))
+    warpSlower.addEventListener('click', () => {
+      if (this.paused) return
+      setWarp(this.timeWarp / 2)
+    })
+    warpFaster.addEventListener('click', () => {
+      if (this.paused) return
+      setWarp(this.timeWarp * 2)
+    })
+
+    warpPause.addEventListener('click', () => {
+      this.paused = !this.paused
+      warpPause.classList.toggle('active', this.paused)
+      warpPause.textContent = this.paused ? '▶' : '⏸'
+      warpPause.title = this.paused ? '继续' : '暂停'
+      if (this.paused) {
+        this.lastTime = performance.now()
+      }
+      refreshWarpLabel()
+    })
+
+    mapFocusSelect.addEventListener('change', () => {
+      this.mapFocusTarget = mapFocusSelect.value as 'earth' | 'rocket'
+      this.mapFocusActive = true
+    })
+
+    const setMapModeUi = (isMap: boolean): void => {
+      mapFocusSelect.classList.toggle('map-focus-select--hidden', !isMap)
+      if (isMap) {
+        this.mapFocusTarget = mapFocusSelect.value as 'earth' | 'rocket'
+        this.mapFocusActive = true
+      }
+    }
 
     mapToggle.addEventListener('click', () => {
       this.viewMode = this.viewMode === 'live' ? 'map' : 'live'
       mapToggle.textContent = this.viewMode === 'live' ? '现场' : '地图'
       mapToggle.classList.toggle('active', this.viewMode === 'map')
+      setMapModeUi(this.viewMode === 'map')
       if (this.viewMode === 'map' && this.sequencePanel) {
         this.sequencePanel.classList.add('sequence-readout--hidden')
         this.sequencePanelVisible = false
@@ -320,6 +360,7 @@ export class LaunchScene {
             this.earthScale = Math.max(0.5, Math.min(3, this.earthScale * ratio))
           } else {
             this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * ratio))
+            this.mapFocusActive = false
           }
         }
         this.lastPinchDist = dist
@@ -339,6 +380,7 @@ export class LaunchScene {
         e.preventDefault()
         const factor = e.deltaY > 0 ? 0.9 : 1.1
         this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * factor))
+        this.mapFocusActive = false
       },
       { passive: false },
     )
@@ -346,6 +388,7 @@ export class LaunchScene {
     this.canvas.addEventListener('pointerdown', (e) => {
       if (this.viewMode !== 'map') return
       this.mapDragging = true
+      this.mapFocusActive = false
       this.mapDragStart = {
         x: e.clientX,
         y: e.clientY,
@@ -374,8 +417,9 @@ export class LaunchScene {
     if (!this.running) return
 
     const now = performance.now()
-    const dt = Math.min((now - this.lastTime) / 1000, 0.05) * this.timeWarp
+    const rawDt = Math.min((now - this.lastTime) / 1000, 0.05)
     this.lastTime = now
+    const dt = this.paused ? 0 : rawDt * this.timeWarp
 
     const width = this.canvas.clientWidth
     const height = this.canvas.clientHeight
@@ -439,6 +483,20 @@ export class LaunchScene {
     }
 
     this.updateFuelBars()
+    this.updateFlightHud(grounded)
+
+    if (this.viewMode === 'map' && this.mapFocusActive && this.mapFocusTarget !== 'free') {
+      const layout = computeMapLayout(
+        this.orbitTracker,
+        this.flight,
+        WORLD_PAD_X,
+        WORLD_PAD_Y,
+        this.mapZoom,
+      )
+      const pan = panToFocusTarget(layout, this.mapFocusTarget, this.mapZoom)
+      this.mapPanX = pan.panX
+      this.mapPanY = pan.panY
+    }
 
     this.draw(width, height, altKm)
     this.rafId = requestAnimationFrame(() => this.loop())
@@ -533,7 +591,7 @@ export class LaunchScene {
     this.ctx.restore()
     this.ctx.restore()
 
-    this.drawFlightHud(width, height, altKm)
+    this.drawKarmanBanner(width, height, altKm)
     this.drawLandingOverlay(width, height)
 
     if (this.statusTimer > 0 && this.statusMessage) {
@@ -662,47 +720,29 @@ export class LaunchScene {
       .join('')
   }
 
-  private drawFlightHud(_width: number, height: number, altKm: number): void {
-    const grounded = this.flight.y >= WORLD_PAD_Y - 1
-    const surface = resolveSurfaceState(this.flight, grounded)
-    const speed = Math.hypot(this.flight.vx, this.flight.vy)
-    const orbit = computeOrbitalElements(this.flight)
-    const moonKm = distanceToMoonKm(this.flight)
+  private updateFlightHud(grounded?: boolean): void {
+    const onGround = grounded ?? this.flight.y >= WORLD_PAD_Y - 1
+    const hud = resolveHudReadout(this.flight, onGround)
+    const speedEl = this.container.querySelector<HTMLElement>('#hud-speed')
+    const altLabelEl = this.container.querySelector<HTMLElement>('#hud-alt-label')
+    const altEl = this.container.querySelector<HTMLElement>('#hud-altitude')
+    if (speedEl) speedEl.textContent = `${hud.speedMs.toFixed(1)} m/s`
+    if (altLabelEl) altLabelEl.textContent = hud.distanceLabel
+    if (altEl) altEl.textContent = `${hud.distanceKm.toFixed(2)} km`
+  }
 
-    this.ctx.fillStyle = 'rgba(0,0,0,0.55)'
-    this.ctx.fillRect(10, 10, 168, 78)
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.15)'
-    this.ctx.lineWidth = 1
-    this.ctx.strokeRect(10, 10, 168, 78)
+  private drawKarmanBanner(width: number, _height: number, altKm: number): void {
+    if (altKm < KARMAN_LINE_KM * 0.8) return
 
-    this.ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    this.ctx.font = '11px system-ui'
-    this.ctx.textAlign = 'left'
-    this.ctx.fillText(`高度 ${surface.altKm.toFixed(2)} km`, 18, 28)
-    this.ctx.fillText(`速度 ${speed.toFixed(1)} m/s`, 18, 44)
-    this.ctx.fillText(`参考 ${surface.label}`, 18, 60)
-    this.ctx.fillText(`距月球 ${moonKm.toFixed(0)} km`, 18, 76)
-
-    if (orbit && !orbit.isEscape && orbit.apoapsisKm > 1) {
-      this.ctx.fillStyle = 'rgba(180,200,255,0.75)'
-      this.ctx.font = '10px system-ui'
-      this.ctx.fillText(
-        `近点 ${orbit.periapsisKm.toFixed(1)} km · 远点 ${orbit.apoapsisKm.toFixed(1)} km`,
-        10,
-        height - 28,
-      )
-    }
-
-    if (altKm >= KARMAN_LINE_KM * 0.8) {
-      const nearKarman = altKm >= KARMAN_LINE_KM
-      this.ctx.fillStyle = nearKarman ? 'rgba(80, 200, 255, 0.9)' : 'rgba(255, 210, 60, 0.9)'
-      this.ctx.font = 'bold 11px system-ui'
-      this.ctx.fillText(
-        nearKarman ? '✦ 已进入太空（卡门线）' : `接近卡门线 ${KARMAN_LINE_KM} km`,
-        10,
-        height - 12,
-      )
-    }
+    const nearKarman = altKm >= KARMAN_LINE_KM
+    this.ctx.fillStyle = nearKarman ? 'rgba(80, 200, 255, 0.9)' : 'rgba(255, 210, 60, 0.9)'
+    this.ctx.font = 'bold 11px system-ui'
+    this.ctx.textAlign = 'center'
+    this.ctx.fillText(
+      nearKarman ? '✦ 已进入太空（卡门线）' : `接近卡门线 ${KARMAN_LINE_KM} km`,
+      width / 2,
+      24,
+    )
   }
 
   private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {

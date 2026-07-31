@@ -71,14 +71,29 @@ export function createLayout(root: HTMLElement): LayoutElements {
         </div>
       </div>
       <button type="button" class="map-toggle-btn" id="map-toggle">现场</button>
+      <select id="map-focus-select" class="map-focus-select map-focus-select--hidden" aria-label="地图追踪">
+        <option value="earth">追踪：地球</option>
+        <option value="rocket">追踪：火箭</option>
+      </select>
       <div class="time-warp-controls">
         <button type="button" class="warp-btn" id="warp-slower" title="减速">−</button>
+        <button type="button" class="warp-btn warp-btn--pause" id="warp-pause" title="暂停">⏸</button>
         <span class="warp-label" id="warp-label">1×</span>
         <button type="button" class="warp-btn" id="warp-faster" title="加速">+</button>
       </div>
       <div id="fuel-bars" class="fuel-bars"></div>
-      <div class="tilt-controls">
+      <div id="flight-hud" class="flight-hud">
         <button type="button" class="tilt-btn" id="tilt-left" aria-label="左倾">←</button>
+        <div class="flight-hud__readout">
+          <div class="flight-hud__row">
+            <span class="flight-hud__key">速度</span>
+            <span class="flight-hud__val" id="hud-speed">0.0 m/s</span>
+          </div>
+          <div class="flight-hud__row">
+            <span class="flight-hud__key" id="hud-alt-label">距地面</span>
+            <span class="flight-hud__val" id="hud-altitude">0.00 km</span>
+          </div>
+        </div>
         <button type="button" class="tilt-btn" id="tilt-right" aria-label="右倾">→</button>
       </div>
       <div class="launch-controls">
