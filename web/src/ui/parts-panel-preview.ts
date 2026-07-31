@@ -12,8 +12,6 @@ export function initPartsPanelPreviews(panel: HTMLElement): void {
 
     const canvas = renderPartPreviewCanvas1to1(typeId)
     canvas.className = 'inventory-item__canvas'
-    canvas.style.width = `${canvas.width}px`
-    canvas.style.height = `${canvas.height}px`
     slot.replaceChildren(canvas)
   })
 }

@@ -297,6 +297,14 @@ export class AssemblyCanvas {
       this.draw()
     } else {
       this.state.clearSelection()
+      this.drag = {
+        mode: 'pan',
+        startPointer: { x: e.clientX, y: e.clientY },
+        lastPointer: { x: e.clientX, y: e.clientY },
+        moved: false,
+        wasSelectedOnDown: false,
+      }
+      this.canvas.setPointerCapture(e.pointerId)
       this.draw()
     }
   }
