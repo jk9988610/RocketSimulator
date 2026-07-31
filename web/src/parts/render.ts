@@ -327,13 +327,13 @@ function heatShieldPath(
 ): void {
   const inset = w * COMMAND_POD_INSET_RATIO
   const cx = x + w / 2
-  const flatY = y
+  const flatY = y + h
   ctx.beginPath()
   ctx.moveTo(x + inset, flatY)
   ctx.lineTo(x + w - inset, flatY)
-  ctx.lineTo(x + w - inset * 0.3, y + h * 0.85)
-  ctx.lineTo(cx, y + h)
-  ctx.lineTo(x + inset * 0.3, y + h * 0.85)
+  ctx.lineTo(x + w - inset * 0.3, y + h * 0.15)
+  ctx.lineTo(cx, y)
+  ctx.lineTo(x + inset * 0.3, y + h * 0.15)
   ctx.closePath()
 }
 

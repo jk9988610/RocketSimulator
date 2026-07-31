@@ -82,8 +82,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px 12px;
+  gap: 20px;
+  padding: 10px 10px 14px;
   overflow-y: auto;
   flex: 1;
   -webkit-overflow-scrolling: touch;
@@ -121,7 +121,7 @@ body {
   align-items: center;
   width: calc(100% - 16px);
   max-width: 168px;
-  padding: 6px 5px 8px;
+  padding: 3px 4px 4px;
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.025);
@@ -146,13 +146,13 @@ body {
 
 .inventory-item__title {
   width: 100%;
-  margin-bottom: 6px;
-  font-size: 10px;
+  margin-bottom: 2px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
   text-align: center;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .inventory-item__preview {
@@ -160,7 +160,9 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
+  height: 40px;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ── 发射场景：左下角资源条 ── */
@@ -224,6 +226,10 @@ body {
 
 .inventory-item__canvas {
   display: block;
+  max-width: 100%;
+  max-height: 40px;
+  width: auto;
+  height: auto;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

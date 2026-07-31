@@ -40,31 +40,40 @@ function clearEnvelopeState(parts: PartInstance[]): void {
 export function updateRingEnvelopes(parts: PartInstance[]): void {
   clearEnvelopeState(parts)
 
+  const ringDef = getPartDefinition('ring-connector')
   const rings = parts.filter((p) => p.typeId === 'ring-connector' && !p.mirrorOf)
 
   for (const ring of rings) {
     const column = getColumnParts(parts, ring).sort((a, b) => a.y - b.y)
-    const envelopable = column.filter((p) => ENVELOPABLE_TYPES.has(p.typeId))
+
+    // 环底端固定在放置位置，只向上延伸包裹，底端仅连接下方物件
+    const ringBottom = ring.y + ringDef.height
+
+    const envelopable = column.filter(
+      (p) =>
+        ENVELOPABLE_TYPES.has(p.typeId) &&
+        p.y < ringBottom &&
+        partBottom(p) <= ringBottom + 2,
+    )
     if (envelopable.length === 0) continue
 
     const envTop = Math.min(...envelopable.map((p) => p.y))
-    const envBottom = Math.max(...envelopable.map((p) => partBottom(p)))
-
     let spanTop = envTop
+
     const anchors = column.filter((p) => ANCHOR_TYPES.has(p.typeId))
     for (const anchor of anchors) {
       const bottom = partBottom(anchor)
-      if (bottom <= envTop + 2) {
+      if (bottom <= ring.y + 2 || bottom <= envTop + 2) {
         spanTop = Math.min(spanTop, bottom)
       }
     }
 
-    const spanBottom = envBottom
+    const spanBottom = ringBottom
     const span = spanBottom - spanTop
-    const ringDef = getPartDefinition(ring.typeId)
     if (span < ringDef.height) continue
 
-    const ref = anchors.find((a) => partBottom(a) <= envTop + 2) ?? envelopable[0]!
+    const ref =
+      anchors.find((a) => partBottom(a) <= envTop + 2) ?? envelopable[0]!
     ring.x = partCenterX(ref) - ringDef.width / 2
     ring.y = spanTop
     ring.ringSpan = span
