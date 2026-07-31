@@ -1,5 +1,7 @@
 import { AssemblyState } from '../assembly/assembly-state'
 import { LaunchSequenceState } from '../assembly/launch-sequence'
+import { LaunchScene } from '../launch/launch-scene'
+import { FlightRocket } from '../launch/rocket-body'
 import {
   buildRocketDesign,
   createAutoSave,
@@ -20,15 +22,26 @@ export function initApp(): void {
 
   let panelMode: SidePanelMode = 'parts'
   let launchPanel!: LaunchSequencePanel
+  let launchScene: LaunchScene | null = null
   const pickHint = layout.assemblyArea.querySelector('#pick-hint')!
 
   const triggerSave = createAutoSave(() =>
     buildRocketDesign(assemblyState, launchState.exportData()),
   )
 
+  const updateLaunchButton = (): void => {
+    const hasEngine = assemblyState
+      .getParts()
+      .some((p) => !p.mirrorOf && p.typeId === 'engine')
+    layout.launchBtn.disabled = !hasEngine
+  }
+
   const canvas = new AssemblyCanvas(layout.assemblyArea, assemblyState, {
     getLaunchTargetIds: () => launchState.getAllTargetPartIds(),
-    onAssemblyChange: triggerSave,
+    onAssemblyChange: () => {
+      triggerSave()
+      updateLaunchButton()
+    },
     onPartPicked: (partId) => {
       if (launchPanel.handlePartPicked(partId)) {
         canvas.redraw()
@@ -55,6 +68,36 @@ export function initApp(): void {
 
   canvas.start()
   bindPartsPanelDrag(layout.partsPanel, canvas)
+  updateLaunchButton()
+
+  const enterLaunchScene = (): void => {
+    const rocket = FlightRocket.fromAssembly(assemblyState.getParts())
+    if (!rocket) return
+
+    launchPanel.setPickingStageId(null)
+    canvas.setInteractionMode('assembly')
+    pickHint.classList.add('pick-hint--hidden')
+    layout.assemblyArea.classList.remove('assembly-area--picking')
+
+    layout.appShell.classList.add('app-shell--hidden')
+    layout.launchScene.classList.remove('launch-scene--hidden')
+
+    launchScene = new LaunchScene(
+      layout.launchScene,
+      rocket,
+      launchState,
+      () => {
+        launchScene?.stop()
+        launchScene = null
+        layout.launchScene.classList.add('launch-scene--hidden')
+        layout.appShell.classList.remove('app-shell--hidden')
+        canvas.resize()
+      },
+    )
+    launchScene.start()
+  }
+
+  layout.launchBtn.addEventListener('click', enterLaunchScene)
 
   const saved = loadRocketDesign()
   if (saved) {
@@ -67,6 +110,7 @@ export function initApp(): void {
     canvas.setSymmetryVisible(saved.symmetryEnabled)
     launchPanel.render()
     canvas.redraw()
+    updateLaunchButton()
   }
 
   layout.symmetryToggle.addEventListener('click', () => {
@@ -99,5 +143,8 @@ export function initApp(): void {
     canvas.redraw()
   })
 
-  window.addEventListener('resize', () => canvas.resize())
+  window.addEventListener('resize', () => {
+    canvas.resize()
+    launchScene?.handleResize()
+  })
 }
