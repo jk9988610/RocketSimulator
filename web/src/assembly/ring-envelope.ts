@@ -53,28 +53,36 @@ function resolveCompactTop(
   ring: PartInstance,
   column: readonly PartInstance[],
 ): number {
+  const anchor = ring.ringPlacementTop ?? ring.y
+
   const heat = column.find((p) => p.typeId === 'heat-shield')
   if (heat) {
     const heatBottom = getPartBottomY(heat)
+    if (isStackedOn(heat, anchor)) {
+      return heatBottom
+    }
+    const heatTop = getPartTopY(heat)
     if (
-      ring.ringPlacementTop === undefined ||
-      !isStackedOn(heat, ring.ringPlacementTop)
+      ring.ringPlacementTop !== undefined &&
+      Math.abs(ring.ringPlacementTop - heatTop) <= CONNECTOR_ALIGN_TOL
     ) {
       return heatBottom
     }
-    return ring.ringPlacementTop
   }
 
   const engine = column.find((p) => p.typeId === 'engine')
   if (engine) {
     const engineBottom = getPartBottomY(engine)
+    if (isStackedOn(engine, anchor)) {
+      return engineBottom
+    }
+    const engineTop = getPartTopY(engine)
     if (
-      ring.ringPlacementTop === undefined ||
-      !isStackedOn(engine, ring.ringPlacementTop)
+      ring.ringPlacementTop !== undefined &&
+      Math.abs(ring.ringPlacementTop - engineTop) <= CONNECTOR_ALIGN_TOL
     ) {
       return engineBottom
     }
-    return ring.ringPlacementTop
   }
 
   if (ring.ringPlacementTop !== undefined) {
