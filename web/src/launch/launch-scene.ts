@@ -489,7 +489,9 @@ export class LaunchScene {
 
     const speedMs = Math.hypot(this.flight.vx, this.flight.vy)
     if (dt > 0) {
-      this.heatLevel = updateHeatLevel(this.heatLevel, speedMs, altKm, dt)
+      this.heatLevel = updateHeatLevel(this.heatLevel, speedMs, altKm, dt, {
+        hasHeatShield: this.rocket.hasHeatShield(),
+      })
     }
 
     this.updateFlightHud(grounded, verticalSpeedMs)
@@ -616,6 +618,7 @@ export class LaunchScene {
 
     this.drawKarmanBanner(width, height, altKm)
     this.drawDescentWarning(width, height, altKm, verticalSpeedMs)
+    this.drawHeatWarning(width, altKm)
     this.drawLandingOverlay(width, height)
 
     if (this.statusTimer > 0 && this.statusMessage) {
@@ -786,7 +789,8 @@ export class LaunchScene {
   private updateFuelBars(): void {
     const container = this.container.querySelector<HTMLElement>('#fuel-bars')
     if (!container) return
-    const tanks = this.rocket.getFuelTanksOrdered()
+    const engineIds = getActiveStageEngineIds(this.rocket, this.launchState.getStages())
+    const tanks = this.rocket.getFuelTanksOrdered(engineIds)
     container.innerHTML = tanks
       .map(
         (t) => `
@@ -886,6 +890,17 @@ export class LaunchScene {
     this.ctx.font = 'bold 11px system-ui'
     this.ctx.textAlign = 'center'
     this.ctx.fillText('⚠ 下降过快 — 展开降落伞', width / 2, 53)
+  }
+
+  private drawHeatWarning(width: number, altKm: number): void {
+    if (this.rocket.hasHeatShield() || this.heatLevel < 0.68 || altKm < 25) return
+
+    this.ctx.fillStyle = 'rgba(200, 80, 30, 0.9)'
+    this.ctx.fillRect(width / 2 - 110, 64, 220, 22)
+    this.ctx.fillStyle = '#fff0d8'
+    this.ctx.font = 'bold 11px system-ui'
+    this.ctx.textAlign = 'center'
+    this.ctx.fillText('⚠ 气动加热过高', width / 2, 79)
   }
 
   private drawKarmanBanner(width: number, _height: number, altKm: number): void {

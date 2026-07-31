@@ -23,7 +23,7 @@ export function collectDetachedStageParts(
 ): FlightPartState[] {
   const detachKinds =
     connector.typeId === 'radial-connector'
-      ? (['bottom', 'left', 'right'] as const)
+      ? (['left', 'right'] as const)
       : (['bottom'] as const)
 
   const seeds = getNeighborsViaKinds(connector, [...detachKinds], parts)
