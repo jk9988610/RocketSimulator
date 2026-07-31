@@ -63,6 +63,13 @@ export function computeMapLayout(
   }
 }
 
+export const MAP_ZOOM_MIN = 0.3
+export const MAP_ZOOM_MAX = 6
+
+export function clampMapZoom(zoom: number): number {
+  return Math.max(MAP_ZOOM_MIN, Math.min(MAP_ZOOM_MAX, zoom))
+}
+
 export function panToFocusTarget(
   layout: MapLayout,
   target: Exclude<MapFocusTarget, 'free'>,
