@@ -1,3 +1,4 @@
+import { collectFuelTanksForEngines, feedHasFuel } from './fuel-feed'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId } from '../parts/types'
 
@@ -89,9 +90,13 @@ export class FlightRocket {
     return computePartsMassKg(this.parts)
   }
 
-  getFuelTanksOrdered(): FuelTankStatus[] {
-    return this.parts
-      .filter((p) => p.typeId === 'fuel-tank' && !p.detached)
+  getFuelTanksOrdered(activeEngineIds?: string[]): FuelTankStatus[] {
+    const tanks =
+      activeEngineIds && activeEngineIds.length > 0
+        ? collectFuelTanksForEngines(activeEngineIds, this.parts)
+        : this.parts.filter((p) => p.typeId === 'fuel-tank' && !p.detached)
+
+    return tanks
       .sort((a, b) => a.y - b.y)
       .map((p, i) => ({
         id: p.id,
@@ -101,12 +106,17 @@ export class FlightRocket {
       }))
   }
 
-  consumeFuel(dt: number, throttle: number, engineCount: number): void {
-    if (engineCount <= 0 || throttle <= 0) return
+  consumeFuel(
+    dt: number,
+    throttle: number,
+    engineCount: number,
+    activeEngineIds: string[],
+  ): void {
+    if (engineCount <= 0 || throttle <= 0 || activeEngineIds.length === 0) return
     const need = FUEL_BURN_RATE * throttle * engineCount * dt
 
-    const tanks = this.parts.filter(
-      (p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0,
+    const tanks = collectFuelTanksForEngines(activeEngineIds, this.parts).filter(
+      (p) => (p.fuel ?? 0) > 0,
     )
     if (tanks.length === 0) return
 
@@ -120,14 +130,23 @@ export class FlightRocket {
     }
   }
 
-  hasFuel(): boolean {
+  hasFuel(activeEngineIds: string[] = []): boolean {
+    if (activeEngineIds.length > 0) {
+      return feedHasFuel(activeEngineIds, this.parts)
+    }
     return this.parts.some(
       (p) => p.typeId === 'fuel-tank' && !p.detached && (p.fuel ?? 0) > 0.01,
     )
   }
 
+  hasHeatShield(): boolean {
+    return this.parts.some((p) => p.typeId === 'heat-shield' && !p.detached)
+  }
+
   getIgnitedEngineThrust(throttle: number, activeEngineIds: string[]): number {
-    if (throttle <= 0 || activeEngineIds.length === 0 || !this.hasFuel()) return 0
+    if (throttle <= 0 || activeEngineIds.length === 0 || !this.hasFuel(activeEngineIds)) {
+      return 0
+    }
     const active = new Set(activeEngineIds)
     const count = this.parts.filter(
       (p) => p.typeId === 'engine' && !p.detached && p.ignited && active.has(p.id),
