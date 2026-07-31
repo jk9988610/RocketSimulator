@@ -48,9 +48,13 @@ npm run dev
 
 浏览器访问 `http://localhost:5173/RocketSimulator/`（注意 base 路径）。
 
-## 在线预览
+## 操作说明（组装区）
 
-GitHub Pages 部署后访问：`https://jk9988610.github.io/RocketSimulator/`
+- 从物件栏**拖出**部件：全程有跟手预览，在组装区松手放置
+- **拖动**已放置部件：移动时自由跟随，松手后吸附网格与连接点
+- 选中部件显示**蓝色连接点**；靠近可对接时会显示绿色吸附提示
+
+## 在线预览`https://jk9988610.github.io/RocketSimulator/`
 
 > 首次需在仓库 Settings → Pages 中选择 **GitHub Actions** 作为来源。
 
