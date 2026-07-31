@@ -91,6 +91,10 @@ r_p = a(1-e),  r_a = a(1+e)
 
 须保留指令仓；降落伞通过启动链 `applyStageAction` 展开。
 
+## 燃料
+
+所有未分离燃料箱**按剩余量比例同步消耗**（并联供油），各箱液位以相同速率下降。
+
 ## 配置入口
 
 - 常数与开关：`web/src/launch/cosmos-scale.ts` → `ENV_CONFIG`

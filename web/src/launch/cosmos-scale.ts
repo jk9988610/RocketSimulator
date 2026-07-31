@@ -83,8 +83,13 @@ export const ENV_CONFIG = {
   heliocentricGravity: false,
 } as const
 
+/** 地图世界坐标（未乘视图 zoom，由 canvas scale 统一缩放） */
+export function kmToMapUnits(km: number): number {
+  return km / MAP_KM_PER_PX_BASE
+}
+
 export function kmToMapPx(km: number, zoom: number): number {
-  return km / (MAP_KM_PER_PX_BASE / zoom)
+  return kmToMapUnits(km) * zoom
 }
 
 export function mapPxToKm(px: number, zoom: number): number {

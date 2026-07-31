@@ -12,11 +12,6 @@ export interface FloatingStage {
   age: number
 }
 
-function partBottom(part: FlightPartState): number {
-  const def = getPartDefinition(part.typeId)
-  return part.y + (part.ringSpan ?? def.height)
-}
-
 function partsOverlapColumn(a: FlightPartState, b: FlightPartState): boolean {
   const da = getPartDefinition(a.typeId)
   const db = getPartDefinition(b.typeId)
@@ -25,19 +20,77 @@ function partsOverlapColumn(a: FlightPartState, b: FlightPartState): boolean {
   return overlap > Math.min(da.width, db.width) * 0.3
 }
 
+/**
+ * 级间分离：连接器与下层/侧枝（枝干）一起脱落，上方主干保留。
+ * 包含：连接器本体、同列其下部件、被该环包裹的引擎/隔热片、径向侧枝。
+ */
+export function collectDetachedStageParts(
+  connector: FlightPartState,
+  parts: readonly FlightPartState[],
+): FlightPartState[] {
+  const splitY = connector.y
+  const detachedIds = new Set<string>([connector.id])
+
+  for (const p of parts) {
+    if (p.detached || p.id === connector.id) continue
+
+    const inColumnBelow =
+      partsOverlapColumn(p, connector) && p.y >= splitY - 4
+
+    if (inColumnBelow) {
+      detachedIds.add(p.id)
+    }
+  }
+
+  if (connector.typeId === 'ring-connector') {
+    for (const p of parts) {
+      if (p.envelopedBy === connector.id) {
+        detachedIds.add(p.id)
+      }
+    }
+  }
+
+  if (connector.typeId === 'radial-connector') {
+    const connDef = getPartDefinition(connector.typeId)
+    const connRight = connector.x + connDef.width
+    for (const p of parts) {
+      if (p.detached || p.id === connector.id) continue
+      const sideAttached =
+        (p.x + getPartDefinition(p.typeId).width >= connector.x - 8 &&
+          p.x <= connRight + 8 &&
+          Math.abs(
+            p.y +
+              (p.ringSpan ?? getPartDefinition(p.typeId).height) / 2 -
+              (connector.y + connDef.height / 2),
+          ) < connDef.height * 0.75) ||
+        (partsOverlapColumn(p, connector) && p.y >= splitY - 4)
+      if (sideAttached) {
+        detachedIds.add(p.id)
+      }
+    }
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const p of parts) {
+      if (p.detached || !p.envelopedBy) continue
+      if (detachedIds.has(p.envelopedBy) && !detachedIds.has(p.id)) {
+        detachedIds.add(p.id)
+        changed = true
+      }
+    }
+  }
+
+  return parts.filter((p) => detachedIds.has(p.id) && !p.detached)
+}
+
+/** @deprecated 使用 collectDetachedStageParts */
 export function collectPartsBelowConnector(
   connector: FlightPartState,
   parts: readonly FlightPartState[],
 ): FlightPartState[] {
-  const splitY = partBottom(connector)
-  return parts.filter(
-    (p) =>
-      !p.detached &&
-      p.id !== connector.id &&
-      !p.envelopedBy &&
-      partsOverlapColumn(p, connector) &&
-      p.y >= splitY - 6,
-  )
+  return collectDetachedStageParts(connector, parts)
 }
 
 export function createFloatingStage(

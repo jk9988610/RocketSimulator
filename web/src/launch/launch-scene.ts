@@ -1,6 +1,6 @@
 import type { LaunchSequenceState } from '../assembly/launch-sequence'
 import { getPartDefinition } from '../parts/definitions'
-import { drawPart } from '../parts/render'
+import { drawPart, getCommandPodTopAnchors } from '../parts/render'
 import type { PartInstance } from '../parts/types'
 import {
   createInitialFlightState,
@@ -28,7 +28,7 @@ import { KARMAN_LINE_KM } from './atmosphere'
 import { computeGeocentricState } from './cosmos-simulation'
 import { computeGravityAcceleration } from './gravity'
 import {
-  collectPartsBelowConnector,
+  collectDetachedStageParts,
   createFloatingStage,
   updateFloatingStage,
   type FloatingStage,
@@ -76,9 +76,6 @@ export class LaunchScene {
   private mapPanX = 0
   private mapPanY = 0
   private mapFocusTarget: MapFocusTarget = 'rocket'
-  private mapFocusActive = true
-  private mapDragging = false
-  private mapDragStart = { x: 0, y: 0, panX: 0, panY: 0 }
   private cosmosSimTimeS = 0
   private parachuteAdvisoryShown = false
 
@@ -278,14 +275,12 @@ export class LaunchScene {
 
     mapFocusSelect.addEventListener('change', () => {
       this.mapFocusTarget = mapFocusSelect.value as MapFocusTarget
-      this.mapFocusActive = true
     })
 
     const setMapModeUi = (isMap: boolean): void => {
       mapFocusSelect.classList.toggle('map-focus-select--hidden', !isMap)
       if (isMap) {
         this.mapFocusTarget = mapFocusSelect.value as MapFocusTarget
-        this.mapFocusActive = true
       }
     }
 
@@ -395,33 +390,6 @@ export class LaunchScene {
       },
       { passive: false },
     )
-
-    this.canvas.addEventListener('pointerdown', (e) => {
-      if (this.viewMode !== 'map') return
-      this.mapDragging = true
-      this.mapFocusActive = false
-      this.mapDragStart = {
-        x: e.clientX,
-        y: e.clientY,
-        panX: this.mapPanX,
-        panY: this.mapPanY,
-      }
-      this.canvas.setPointerCapture(e.pointerId)
-    })
-
-    this.canvas.addEventListener('pointermove', (e) => {
-      if (!this.mapDragging || this.viewMode !== 'map') return
-      this.mapPanX = this.mapDragStart.panX + (e.clientX - this.mapDragStart.x)
-      this.mapPanY = this.mapDragStart.panY + (e.clientY - this.mapDragStart.y)
-    })
-
-    const endMapDrag = (e: PointerEvent): void => {
-      if (!this.mapDragging) return
-      this.mapDragging = false
-      this.canvas.releasePointerCapture(e.pointerId)
-    }
-    this.canvas.addEventListener('pointerup', endMapDrag)
-    this.canvas.addEventListener('pointercancel', endMapDrag)
   }
 
   private loop(): void {
@@ -518,13 +486,12 @@ export class LaunchScene {
     this.updateFuelBars()
     this.updateFlightHud(grounded, verticalSpeedMs)
 
-    if (this.viewMode === 'map' && this.mapFocusActive && this.mapFocusTarget !== 'free') {
+    if (this.viewMode === 'map' && this.mapFocusTarget !== 'free') {
       const layout = computeMapLayout(
         this.orbitTracker,
         this.flight,
         WORLD_PAD_X,
         WORLD_PAD_Y,
-        this.mapZoom,
         this.cosmosSimTimeS,
       )
       const pan = panToFocusTarget(layout, this.mapFocusTarget, this.mapZoom)
@@ -545,15 +512,15 @@ export class LaunchScene {
         continue
       }
 
-      const below = collectPartsBelowConnector(connector, this.rocket.parts)
-      if (below.length === 0) continue
+      const detached = collectDetachedStageParts(connector, this.rocket.parts)
+      if (detached.length === 0) continue
 
-      for (const p of below) p.detached = true
+      for (const p of detached) p.detached = true
 
       const { centerX, bottomY } = this.rocket.bounds
       this.floatingStages.push(
         createFloatingStage(
-          below,
+          detached,
           this.flight.x,
           this.flight.y,
           this.flight.vx,
@@ -613,15 +580,24 @@ export class LaunchScene {
     for (const part of this.rocket.parts) {
       if (part.detached || part.envelopedBy) continue
       const instance: PartInstance = part
-      drawPart(this.ctx, instance, false, { ringSpan: part.ringSpan })
-      if (part.connectorOpen && (part.typeId === 'ring-connector' || part.typeId === 'radial-connector')) {
-        this.drawOpenConnector(part)
-      }
+      drawPart(this.ctx, instance, false, { ringSpan: part.ringSpan, physical: true })
       if (part.ignited && part.typeId === 'engine' && this.engineOn && this.throttle > 0) {
         this.drawEngineFlame(part)
       }
       if (part.parachuteDeployed && part.typeId === 'parachute') {
         this.drawDeployedParachute(part)
+      }
+    }
+
+    const commandPod = this.rocket.parts.find(
+      (p) => p.typeId === 'command-pod' && !p.detached,
+    )
+    if (commandPod) {
+      const deployedChute = this.rocket.parts.find(
+        (p) => p.typeId === 'parachute' && p.parachuteDeployed && !p.detached,
+      )
+      if (deployedChute) {
+        this.drawParachuteRigging(deployedChute, commandPod)
       }
     }
 
@@ -729,27 +705,66 @@ export class LaunchScene {
     this.ctx.translate(-centerX, -bottomY)
 
     for (const part of fs.parts) {
-      drawPart(this.ctx, part, false, { ringSpan: part.ringSpan })
+      drawPart(this.ctx, part, false, { ringSpan: part.ringSpan, physical: true })
     }
     this.ctx.restore()
   }
 
-  private drawOpenConnector(part: import('./rocket-body').FlightPartState): void {
+  private drawParachuteRigging(
+    chute: import('./rocket-body').FlightPartState,
+    pod: import('./rocket-body').FlightPartState,
+  ): void {
+    const podDef = getPartDefinition('command-pod')
+    const anchors = getCommandPodTopAnchors(pod.x, pod.y, podDef.width, podDef.height)
+    const chuteDef = getPartDefinition('parachute')
+    const cx = chute.x + chuteDef.width / 2
+    const canopyBaseY = chute.y
+    const expandR = chuteDef.width * 1.35
+    const canopyR = expandR * 0.72
+    const canopyY = canopyBaseY - canopyR * 0.55
+
+    const rigPoints = [
+      { x: anchors.leftX, y: anchors.topY },
+      { x: anchors.centerX, y: anchors.topY },
+      { x: anchors.rightX, y: anchors.topY },
+    ]
+    const canopyAttach = [
+      { x: cx - expandR * 0.55, y: canopyY },
+      { x: cx, y: canopyY - canopyR * 0.15 },
+      { x: cx + expandR * 0.55, y: canopyY },
+    ]
+
+    this.ctx.strokeStyle = 'rgba(220, 220, 230, 0.75)'
+    this.ctx.lineWidth = 1.2
+    for (let i = 0; i < rigPoints.length; i++) {
+      const from = rigPoints[i]!
+      const to = canopyAttach[i]!
+      this.ctx.beginPath()
+      this.ctx.moveTo(from.x, from.y)
+      this.ctx.lineTo(to.x, to.y)
+      this.ctx.stroke()
+    }
+  }
+
+  private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {
     const def = getPartDefinition(part.typeId)
-    const h = part.ringSpan ?? def.height
+    const cx = part.x + def.width / 2
+    const baseY = part.y
+    const expandR = def.width * 1.35
+    const canopyR = expandR * 0.72
+    const canopyCenterY = baseY - canopyR * 0.55
 
-    const gap = 6
-
-    this.ctx.strokeStyle = 'rgba(255, 210, 60, 0.9)'
-    this.ctx.lineWidth = 2
-    this.ctx.setLineDash([4, 3])
+    this.ctx.fillStyle = 'rgba(255, 90, 90, 0.82)'
     this.ctx.beginPath()
-    this.ctx.moveTo(part.x, part.y + h * 0.5 - gap)
-    this.ctx.lineTo(part.x + def.width, part.y + h * 0.5 - gap)
-    this.ctx.moveTo(part.x, part.y + h * 0.5 + gap)
-    this.ctx.lineTo(part.x + def.width, part.y + h * 0.5 + gap)
-    this.ctx.stroke()
-    this.ctx.setLineDash([])
+    this.ctx.arc(cx, canopyCenterY + canopyR * 0.5, expandR, Math.PI, 0)
+    this.ctx.closePath()
+    this.ctx.fill()
+
+    this.ctx.fillStyle = 'rgba(255, 180, 180, 0.45)'
+    this.ctx.beginPath()
+    this.ctx.arc(cx, canopyCenterY + canopyR * 0.5, canopyR, Math.PI, 0)
+    this.ctx.closePath()
+    this.ctx.fill()
   }
 
   private updateFuelBars(): void {
@@ -772,7 +787,7 @@ export class LaunchScene {
 
   private applyMapZoom(nextZoom: number): void {
     this.mapZoom = clampMapZoom(nextZoom)
-    if (this.viewMode !== 'map' || !this.mapFocusActive || this.mapFocusTarget === 'free') {
+    if (this.viewMode !== 'map' || this.mapFocusTarget === 'free') {
       return
     }
     const layout = computeMapLayout(
@@ -780,7 +795,6 @@ export class LaunchScene {
       this.flight,
       WORLD_PAD_X,
       WORLD_PAD_Y,
-      this.mapZoom,
       this.cosmosSimTimeS,
     )
     const pan = panToFocusTarget(layout, this.mapFocusTarget, this.mapZoom)
@@ -875,38 +889,6 @@ export class LaunchScene {
       width / 2,
       24,
     )
-  }
-
-  private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {
-    const def = getPartDefinition(part.typeId)
-    const cx = part.x + def.width / 2
-    const baseY = part.y + def.height
-    const expandR = def.width * 1.35
-    const canopyR = expandR * 0.72
-
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-    this.ctx.lineWidth = 1
-    for (let i = -2; i <= 2; i++) {
-      this.ctx.beginPath()
-      this.ctx.moveTo(cx + i * 8, baseY - 4)
-      this.ctx.lineTo(cx + i * expandR * 0.22, baseY - canopyR * 0.55)
-      this.ctx.stroke()
-    }
-
-    this.ctx.fillStyle = 'rgba(255, 90, 90, 0.75)'
-    this.ctx.strokeStyle = '#cc4444'
-    this.ctx.lineWidth = 2
-    this.ctx.beginPath()
-    this.ctx.arc(cx, baseY, expandR, Math.PI, 0)
-    this.ctx.closePath()
-    this.ctx.fill()
-    this.ctx.stroke()
-
-    this.ctx.fillStyle = 'rgba(255, 180, 180, 0.4)'
-    this.ctx.beginPath()
-    this.ctx.arc(cx, baseY, canopyR, Math.PI, 0)
-    this.ctx.closePath()
-    this.ctx.fill()
   }
 
   private drawLandingOverlay(width: number, height: number): void {
