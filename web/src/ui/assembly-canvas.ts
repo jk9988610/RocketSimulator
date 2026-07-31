@@ -5,9 +5,13 @@ import { GRID_SIZE, snapPoint } from '../assembly/grid'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
-import { DragGhost } from './drag-ghost'
 
-type DragMode = 'none' | 'move' | 'place'
+const VIEW_ZOOM_MIN = 0.45
+const VIEW_ZOOM_MAX = 2.8
+const WORKSPACE_HEIGHT = 2200
+const VIEW_PAN_MARGIN = 160
+
+type DragMode = 'none' | 'move' | 'place' | 'pan'
 
 interface DragState {
   mode: DragMode
@@ -46,7 +50,9 @@ export class AssemblyCanvas {
   private ghostPosition: PointerPosition | null = null
   private interactionMode: InteractionMode = 'assembly'
   private readonly options: AssemblyCanvasOptions
-  private readonly moveGhost = new DragGhost()
+  private viewZoom = 1
+  private viewPanY = 0
+  private lastPinchDist = 0
 
   constructor(
     container: HTMLElement,
@@ -185,10 +191,81 @@ export class AssemblyCanvas {
     this.canvas.addEventListener('pointermove', this.onPointerMove)
     this.canvas.addEventListener('pointerup', this.onPointerUp)
     this.canvas.addEventListener('pointercancel', this.onPointerUp)
+    this.canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault()
+        const rect = this.canvas.getBoundingClientRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+        const worldBefore = this.screenToWorld(sx, sy)
+        const factor = e.deltaY > 0 ? 0.9 : 1.1
+        const nextZoom = Math.max(
+          VIEW_ZOOM_MIN,
+          Math.min(VIEW_ZOOM_MAX, this.viewZoom * factor),
+        )
+        const height = this.canvas.clientHeight
+        const cy = height / 2
+        this.viewPanY = sy - (worldBefore.y - cy) * nextZoom - cy
+        this.viewZoom = nextZoom
+        this.clampViewPanY()
+        this.draw()
+      },
+      { passive: false },
+    )
+    this.canvas.addEventListener(
+      'touchmove',
+      (e) => {
+        if (e.touches.length !== 2) return
+        e.preventDefault()
+        const dist = Math.hypot(
+          e.touches[0]!.clientX - e.touches[1]!.clientX,
+          e.touches[0]!.clientY - e.touches[1]!.clientY,
+        )
+        if (this.lastPinchDist > 0) {
+          const ratio = dist / this.lastPinchDist
+          const rect = this.canvas.getBoundingClientRect()
+          const sx =
+            (e.touches[0]!.clientX + e.touches[1]!.clientX) / 2 - rect.left
+          const sy =
+            (e.touches[0]!.clientY + e.touches[1]!.clientY) / 2 - rect.top
+          const worldBefore = this.screenToWorld(sx, sy)
+          const nextZoom = Math.max(
+            VIEW_ZOOM_MIN,
+            Math.min(VIEW_ZOOM_MAX, this.viewZoom * ratio),
+          )
+          const height = this.canvas.clientHeight
+          const cy = height / 2
+          this.viewPanY = sy - (worldBefore.y - cy) * nextZoom - cy
+          this.viewZoom = nextZoom
+          this.clampViewPanY()
+          this.draw()
+        }
+        this.lastPinchDist = dist
+      },
+      { passive: false },
+    )
+    this.canvas.addEventListener('touchend', () => {
+      this.lastPinchDist = 0
+    })
   }
 
   private onPointerDown = (e: PointerEvent): void => {
     if (this.drag.mode === 'place') return
+
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      this.drag = {
+        mode: 'pan',
+        startPointer: { x: e.clientX, y: e.clientY },
+        lastPointer: { x: e.clientX, y: e.clientY },
+        moved: false,
+        wasSelectedOnDown: false,
+      }
+      this.canvas.setPointerCapture(e.pointerId)
+      return
+    }
+
+    if (e.button !== 0) return
 
     const pointer = this.clientToCanvas(e.clientX, e.clientY)
 
@@ -227,6 +304,18 @@ export class AssemblyCanvas {
   private onPointerMove = (e: PointerEvent): void => {
     if (this.drag.mode === 'place' || this.interactionMode === 'pick-target') return
 
+    if (this.drag.mode === 'pan') {
+      const dy = e.clientY - this.drag.lastPointer.y
+      if (dy !== 0) {
+        this.viewPanY += dy
+        this.clampViewPanY()
+        this.drag.lastPointer = { x: e.clientX, y: e.clientY }
+        this.drag.moved = true
+        this.draw()
+      }
+      return
+    }
+
     if (this.drag.mode === 'move') {
       const pointer = this.clientToCanvas(e.clientX, e.clientY)
       const dx = pointer.x - this.drag.lastPointer.x
@@ -237,13 +326,6 @@ export class AssemblyCanvas {
         this.state.moveParts(ids, dx, dy, this.getAxisX())
         this.drag.lastPointer = pointer
         this.drag.moved = true
-
-        const hit = this.drag.hitId ? this.state.getPartById(this.drag.hitId) : undefined
-        if (hit) {
-          this.moveGhost.start(hit.typeId)
-          this.moveGhost.move(hit.typeId, e.clientX, e.clientY)
-        }
-
         this.options.onAssemblyChange?.()
         this.draw()
       }
@@ -251,9 +333,19 @@ export class AssemblyCanvas {
   }
 
   private onPointerUp = (e: PointerEvent): void => {
-    if (this.drag.mode === 'move') {
-      this.moveGhost.hide()
+    if (this.drag.mode === 'pan') {
+      this.canvas.releasePointerCapture(e.pointerId)
+      this.drag = {
+        mode: 'none',
+        startPointer: { x: 0, y: 0 },
+        lastPointer: { x: 0, y: 0 },
+        moved: false,
+        wasSelectedOnDown: false,
+      }
+      return
+    }
 
+    if (this.drag.mode === 'move') {
       if (this.drag.moved) {
         const recycleZone = this.options.recycleZone
         const overRecycle =
@@ -303,7 +395,38 @@ export class AssemblyCanvas {
 
   private clientToCanvas(clientX: number, clientY: number): PointerPosition {
     const rect = this.canvas.getBoundingClientRect()
-    return { x: clientX - rect.left, y: clientY - rect.top }
+    return this.screenToWorld(clientX - rect.left, clientY - rect.top)
+  }
+
+  private screenToWorld(sx: number, sy: number): PointerPosition {
+    const width = this.canvas.clientWidth
+    const height = this.canvas.clientHeight
+    const cx = width / 2
+    const cy = height / 2
+    return {
+      x: (sx - cx) / this.viewZoom + cx,
+      y: (sy - this.viewPanY - cy) / this.viewZoom + cy,
+    }
+  }
+
+  private clampViewPanY(): void {
+    const height = this.canvas.clientHeight
+    const scaledWorkspace = WORKSPACE_HEIGHT * this.viewZoom
+    const maxPanDown = height * 0.3
+    const maxPanUp = Math.min(
+      -(scaledWorkspace - height + VIEW_PAN_MARGIN),
+      -VIEW_PAN_MARGIN * 0.25,
+    )
+    this.viewPanY = Math.max(maxPanUp, Math.min(maxPanDown, this.viewPanY))
+  }
+
+  private applyViewTransform(width: number, height: number): void {
+    const cx = width / 2
+    const cy = height / 2
+    this.ctx.translate(0, this.viewPanY)
+    this.ctx.translate(cx, cy)
+    this.ctx.scale(this.viewZoom, this.viewZoom)
+    this.ctx.translate(-cx, -cy)
   }
 
   private getAxisX(): number {
@@ -319,7 +442,10 @@ export class AssemblyCanvas {
       this.ctx.fillStyle = '#000000'
       this.ctx.fillRect(0, 0, width, height)
 
-      this.drawGrid(width, height)
+      this.ctx.save()
+      this.applyViewTransform(width, height)
+
+      this.drawGrid(width)
 
       if (this.symmetryVisible) {
         this.drawSymmetryAxis(width, height)
@@ -328,9 +454,6 @@ export class AssemblyCanvas {
       for (const part of this.state.getParts()) {
         if (part.envelopedBy) continue
         const isSelected = this.state.isSelected(part.id)
-        const isFloating =
-          this.drag.mode === 'move' && this.drag.moved && isSelected
-        if (isFloating) continue
 
         const isLaunchTarget = this.options.getLaunchTargetIds?.().has(part.id) ?? false
         const isEligible =
@@ -361,6 +484,8 @@ export class AssemblyCanvas {
       }
 
       this.drawSymmetryGhosts()
+
+      this.ctx.restore()
     })
   }
 
@@ -404,23 +529,35 @@ export class AssemblyCanvas {
     this.ctx.globalAlpha = 1
   }
 
-  private drawGrid(width: number, height: number): void {
+  private drawGrid(width: number): void {
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)'
-    this.ctx.lineWidth = 1
+    this.ctx.lineWidth = 1 / this.viewZoom
+
+    const gridExtent = Math.max(width, WORKSPACE_HEIGHT) + GRID_SIZE * 4
+    const startY = -GRID_SIZE * 2
+    const endY = gridExtent
 
     for (let x = 0; x <= width; x += GRID_SIZE) {
       this.ctx.beginPath()
-      this.ctx.moveTo(x + 0.5, 0)
-      this.ctx.lineTo(x + 0.5, height)
+      this.ctx.moveTo(x + 0.5 / this.viewZoom, startY)
+      this.ctx.lineTo(x + 0.5 / this.viewZoom, endY)
       this.ctx.stroke()
     }
 
-    for (let y = 0; y <= height; y += GRID_SIZE) {
+    for (let y = startY; y <= endY; y += GRID_SIZE) {
       this.ctx.beginPath()
-      this.ctx.moveTo(0, y + 0.5)
-      this.ctx.lineTo(width, y + 0.5)
+      this.ctx.moveTo(0, y + 0.5 / this.viewZoom)
+      this.ctx.lineTo(width, y + 0.5 / this.viewZoom)
       this.ctx.stroke()
     }
+
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+    this.ctx.setLineDash([8 / this.viewZoom, 8 / this.viewZoom])
+    this.ctx.beginPath()
+    this.ctx.moveTo(0, WORKSPACE_HEIGHT)
+    this.ctx.lineTo(width, WORKSPACE_HEIGHT)
+    this.ctx.stroke()
+    this.ctx.setLineDash([])
   }
 
   private drawSymmetryAxis(width: number, height: number): void {

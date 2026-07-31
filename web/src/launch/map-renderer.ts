@@ -62,8 +62,8 @@ export function computeMapLayout(
   }
 }
 
-export const MAP_ZOOM_MIN = 0.3
-export const MAP_ZOOM_MAX = 6
+export const MAP_ZOOM_MIN = 0.15
+export const MAP_ZOOM_MAX = 24
 
 export function clampMapZoom(zoom: number): number {
   return Math.max(MAP_ZOOM_MIN, Math.min(MAP_ZOOM_MAX, zoom))

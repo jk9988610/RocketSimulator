@@ -37,6 +37,9 @@ import {
 } from './stage-separation'
 import type { LaunchStage } from '../assembly/launch-sequence'
 
+const LIVE_ZOOM_MIN = 0.35
+const LIVE_ZOOM_MAX = 5
+const KARMAN_BANNER_DURATION_S = 4.5
 const WORLD_PAD_Y = 0
 const WORLD_PAD_X = 0
 /** 火箭在画面中的垂直偏移（负值 = 略高于中心，留出下方视野） */
@@ -52,15 +55,15 @@ export class LaunchScene {
   private readonly orbitTracker = new OrbitTracker()
 
   private viewMode: ViewMode = 'live'
-  private cameraX = 0
-  private cameraY = CAMERA_Y_OFFSET
 
   private engineOn = false
   private throttle = 0
   private tiltLeft = false
   private tiltRight = false
-  private earthScale = 1
+  private liveZoom = 1
   private lastPinchDist = 0
+  private karmanBannerTimer = 0
+  private karmanBannerVisible = false
   private rafId = 0
   private lastTime = 0
   private running = false
@@ -107,8 +110,6 @@ export class LaunchScene {
     this.canvas = canvas
     this.ctx = ctx
     this.flight = createInitialFlightState(WORLD_PAD_X, WORLD_PAD_Y, rocket)
-    this.cameraX = WORLD_PAD_X
-    this.cameraY = WORLD_PAD_Y + CAMERA_Y_OFFSET
   }
 
   start(): void {
@@ -126,8 +127,6 @@ export class LaunchScene {
   reset(rocket: FlightRocket): void {
     this.rocket = rocket
     this.flight = createInitialFlightState(WORLD_PAD_X, WORLD_PAD_Y, rocket)
-    this.cameraX = WORLD_PAD_X
-    this.cameraY = WORLD_PAD_Y + CAMERA_Y_OFFSET
     this.orbitTracker.reset()
     this.stageRunner.reset()
     this.floatingStages = []
@@ -141,6 +140,9 @@ export class LaunchScene {
     this.cosmosSimTimeS = 0
     this.parachuteAdvisoryShown = false
     this.heatLevel = 0
+    this.liveZoom = 1
+    this.karmanBannerTimer = 0
+    this.karmanBannerVisible = false
     this.updateFuelBars()
     const engineSwitch = this.container.querySelector<HTMLButtonElement>('#engine-switch')
     const throttle = this.container.querySelector<HTMLInputElement>('#throttle')
@@ -200,13 +202,17 @@ export class LaunchScene {
       refreshWarpLabel()
     }
 
+    const menuWrap = this.container.querySelector<HTMLElement>('.launch-menu-wrap')!
+
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       menuPanel.classList.toggle('launch-menu--hidden')
     })
 
-    document.addEventListener('click', () => {
-      menuPanel.classList.add('launch-menu--hidden')
+    this.container.addEventListener('click', (e) => {
+      if (!menuWrap.contains(e.target as Node)) {
+        menuPanel.classList.add('launch-menu--hidden')
+      }
     })
 
     menuPanel.addEventListener('click', (e) => e.stopPropagation())
@@ -369,7 +375,10 @@ export class LaunchScene {
         if (this.lastPinchDist > 0) {
           const ratio = dist / this.lastPinchDist
           if (this.viewMode === 'live') {
-            this.earthScale = Math.max(0.5, Math.min(3, this.earthScale * ratio))
+            this.liveZoom = Math.max(
+              LIVE_ZOOM_MIN,
+              Math.min(LIVE_ZOOM_MAX, this.liveZoom * ratio),
+            )
           } else {
             this.applyMapZoom(this.mapZoom * ratio)
           }
@@ -387,10 +396,16 @@ export class LaunchScene {
     this.canvas.addEventListener(
       'wheel',
       (e) => {
-        if (this.viewMode !== 'map') return
         e.preventDefault()
         const factor = e.deltaY > 0 ? 0.9 : 1.1
-        this.applyMapZoom(this.mapZoom * factor)
+        if (this.viewMode === 'map') {
+          this.applyMapZoom(this.mapZoom * factor)
+        } else {
+          this.liveZoom = Math.max(
+            LIVE_ZOOM_MIN,
+            Math.min(LIVE_ZOOM_MAX, this.liveZoom * factor),
+          )
+        }
       },
       { passive: false },
     )
@@ -457,6 +472,22 @@ export class LaunchScene {
 
     if (this.statusTimer > 0) this.statusTimer -= dt
 
+    if (altKm >= KARMAN_LINE_KM * 0.8) {
+      if (!this.karmanBannerVisible && this.karmanBannerTimer <= 0) {
+        this.karmanBannerVisible = true
+        this.karmanBannerTimer = KARMAN_BANNER_DURATION_S
+      }
+      if (this.karmanBannerVisible && this.karmanBannerTimer > 0) {
+        this.karmanBannerTimer -= dt
+        if (this.karmanBannerTimer <= 0) {
+          this.karmanBannerVisible = false
+        }
+      }
+    } else {
+      this.karmanBannerVisible = false
+      this.karmanBannerTimer = 0
+    }
+
     this.maxAltM = Math.max(this.maxAltM, altM)
 
     if (grounded && !this.prevGrounded && this.landingResult === 'none') {
@@ -477,9 +508,7 @@ export class LaunchScene {
     }
     this.prevGrounded = grounded
 
-    // 相机锁定火箭，无延迟跟随
-    this.cameraX = this.flight.x
-    this.cameraY = this.flight.y + CAMERA_Y_OFFSET
+    // 相机锁定火箭，无延迟跟随（通过 draw 中 translate 实现）
 
     this.orbitTracker.record(this.flight, WORLD_PAD_X, WORLD_PAD_Y)
 
@@ -577,7 +606,9 @@ export class LaunchScene {
     this.drawSkyMoon(width, height, altKm)
 
     this.ctx.save()
-    this.ctx.translate(width / 2 - this.cameraX, height * 0.58 - this.cameraY)
+    this.ctx.translate(width / 2, height * 0.58)
+    this.ctx.scale(this.liveZoom, this.liveZoom)
+    this.ctx.translate(-this.flight.x, -(this.flight.y + CAMERA_Y_OFFSET))
 
     this.drawEarth()
     this.drawLaunchPad()
@@ -632,7 +663,7 @@ export class LaunchScene {
   }
 
   private drawEarth(): void {
-    const earthR = 720 * this.earthScale
+    const earthR = 720
     const cx = 0
     const cy = 280
     const { earthRotation } = computeGeocentricState(this.cosmosSimTimeS)
@@ -904,9 +935,15 @@ export class LaunchScene {
   }
 
   private drawKarmanBanner(width: number, _height: number, altKm: number): void {
+    if (!this.karmanBannerVisible || this.karmanBannerTimer <= 0) return
     if (altKm < KARMAN_LINE_KM * 0.8) return
 
+    const fadeIn = Math.min(1, (KARMAN_BANNER_DURATION_S - this.karmanBannerTimer) / 0.35)
+    const fadeOut = Math.min(1, this.karmanBannerTimer / 0.8)
+    const alpha = Math.min(fadeIn, fadeOut)
+
     const nearKarman = altKm >= KARMAN_LINE_KM
+    this.ctx.globalAlpha = alpha
     this.ctx.fillStyle = nearKarman ? 'rgba(80, 200, 255, 0.9)' : 'rgba(255, 210, 60, 0.9)'
     this.ctx.font = 'bold 11px system-ui'
     this.ctx.textAlign = 'center'
@@ -915,6 +952,7 @@ export class LaunchScene {
       width / 2,
       24,
     )
+    this.ctx.globalAlpha = 1
   }
 
   private drawLandingOverlay(width: number, height: number): void {
