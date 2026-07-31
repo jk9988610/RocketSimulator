@@ -1,7 +1,7 @@
 import { findSnapPair } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
-import { updateRingEnvelopes, collapseRingConnector } from './ring-envelope'
+import { updateRingEnvelopes, collapseRingConnector, syncRingPlacementTop } from './ring-envelope'
 
 let nextId = 1
 
@@ -77,6 +77,10 @@ export class AssemblyState {
 
     if (this.symmetryEnabled) {
       this.ensureMirrorForPart(part, axisX)
+    }
+
+    if (part.typeId === 'ring-connector') {
+      syncRingPlacementTop(part)
     }
 
     updateRingEnvelopes(this.parts)
@@ -232,6 +236,13 @@ export class AssemblyState {
 
       if (this.symmetryEnabled) {
         this.ensureMirrorForPart(part, axisX)
+      }
+    }
+
+    for (const part of this.parts) {
+      if (!idSet.has(part.id) || part.mirrorOf) continue
+      if (part.typeId === 'ring-connector') {
+        syncRingPlacementTop(part)
       }
     }
 
