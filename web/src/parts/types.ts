@@ -23,6 +23,10 @@ export interface PartInstance {
   x: number
   y: number
   mirrorOf?: string
+  /** 被圆环连接器包络隐藏 */
+  envelopedBy?: string
+  /** 圆环连接器纵向延伸高度（px） */
+  ringSpan?: number
 }
 
 export interface PointerPosition {

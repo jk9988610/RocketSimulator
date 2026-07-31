@@ -3,6 +3,9 @@ import type { FlightState } from './flight-physics'
 
 type ViewMode = 'live' | 'map'
 
+const EARTH_ORBIT_R = 130
+const MOON_ORBIT_R = 28
+
 export function drawMapView(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -16,9 +19,9 @@ export function drawMapView(
   ctx.fillStyle = '#050510'
   ctx.fillRect(0, 0, width, height)
 
-  const cx = width * 0.42
+  const cx = width * 0.5
   const cy = height * 0.5
-  const scale = Math.min(width, height) / 320
+  const scale = Math.min(width, height) / 340
 
   ctx.save()
   ctx.translate(cx, cy)
@@ -26,40 +29,50 @@ export function drawMapView(
 
   drawStars(ctx, width, height, scale, cx, cy)
 
-  // 太阳公转轨道（示意）
-  ctx.strokeStyle = 'rgba(255, 200, 60, 0.12)'
-  ctx.lineWidth = 1
+  // 太阳（中心）
+  ctx.fillStyle = 'rgba(255, 200, 60, 0.15)'
   ctx.beginPath()
-  ctx.arc(0, 0, 200, 0, Math.PI * 2)
-  ctx.stroke()
-
-  const sunAngle = Date.now() / 8000
-  const sunX = Math.cos(sunAngle) * 200
-  const sunY = Math.sin(sunAngle) * 200
+  ctx.arc(0, 0, 14, 0, Math.PI * 2)
+  ctx.fill()
   ctx.fillStyle = '#ffd54a'
   ctx.beginPath()
-  ctx.arc(sunX, sunY, 10, 0, Math.PI * 2)
+  ctx.arc(0, 0, 10, 0, Math.PI * 2)
   ctx.fill()
-  ctx.fillStyle = 'rgba(255, 213, 74, 0.5)'
+  ctx.fillStyle = 'rgba(255, 213, 74, 0.8)'
   ctx.font = '9px system-ui'
-  ctx.fillText('太阳', sunX + 12, sunY + 3)
+  ctx.textAlign = 'left'
+  ctx.fillText('太阳', 14, 4)
 
-  // 月球公转轨道
-  ctx.strokeStyle = 'rgba(200, 200, 220, 0.2)'
+  // 地球公转轨道（日心）
+  ctx.strokeStyle = 'rgba(100, 160, 220, 0.18)'
+  ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.arc(0, 0, 110, 0, Math.PI * 2)
+  ctx.arc(0, 0, EARTH_ORBIT_R, 0, Math.PI * 2)
+  ctx.stroke()
+
+  const earthAngle = Date.now() / 14000
+  const earthX = Math.cos(earthAngle) * EARTH_ORBIT_R
+  const earthY = Math.sin(earthAngle) * EARTH_ORBIT_R
+
+  ctx.save()
+  ctx.translate(earthX, earthY)
+
+  // 月球公转轨道（地心）
+  ctx.strokeStyle = 'rgba(200, 200, 220, 0.22)'
+  ctx.beginPath()
+  ctx.arc(0, 0, MOON_ORBIT_R, 0, Math.PI * 2)
   ctx.stroke()
 
   const moonAngle = Date.now() / 5000
-  const moonX = Math.cos(moonAngle) * 110
-  const moonY = Math.sin(moonAngle) * 110
+  const moonX = Math.cos(moonAngle) * MOON_ORBIT_R
+  const moonY = Math.sin(moonAngle) * MOON_ORBIT_R
   ctx.fillStyle = '#c8c8d8'
   ctx.beginPath()
-  ctx.arc(moonX, moonY, 8, 0, Math.PI * 2)
+  ctx.arc(moonX, moonY, 5, 0, Math.PI * 2)
   ctx.fill()
   ctx.fillStyle = 'rgba(200,200,220,0.7)'
   ctx.font = '8px system-ui'
-  ctx.fillText('月球', moonX + 10, moonY + 3)
+  ctx.fillText('月球', moonX + 8, moonY + 3)
 
   // 地球
   ctx.fillStyle = '#1b4332'
@@ -74,7 +87,7 @@ export function drawMapView(
   ctx.textAlign = 'center'
   ctx.fillText('地球', 0, EARTH_MAP_RADIUS + 14)
 
-  // 火箭飞行轨道
+  // 火箭飞行轨道（地球局部坐标）
   const samples = tracker.getSamples()
   if (samples.length > 1) {
     ctx.strokeStyle = 'rgba(59, 158, 255, 0.65)'
@@ -96,7 +109,6 @@ export function drawMapView(
     drawOrbitMarker(ctx, peri, '近点', '#50dc78')
   }
 
-  // 火箭（三角形）
   const rocket = tracker.getRocketMapPosition(flight, padCenterX, padSurfaceY)
   const tipAngle = flightAngle - Math.PI / 2
   ctx.fillStyle = '#3b9eff'
@@ -116,6 +128,7 @@ export function drawMapView(
   ctx.closePath()
   ctx.fill()
 
+  ctx.restore()
   ctx.restore()
 
   ctx.fillStyle = 'rgba(255,255,255,0.5)'

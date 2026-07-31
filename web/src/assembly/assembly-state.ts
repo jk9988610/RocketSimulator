@@ -2,6 +2,7 @@ import { findSnapPair } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
 import { snapPoint, snapToGrid } from './grid'
+import { updateRingEnvelopes } from './ring-envelope'
 
 let nextId = 1
 
@@ -59,6 +60,7 @@ export class AssemblyState {
       this.parts.push(mirror)
     }
 
+    updateRingEnvelopes(this.parts)
     return part
   }
 
@@ -92,6 +94,7 @@ export class AssemblyState {
       .map((p) => ({ ...p }))
     this.selectedIds.clear()
     syncNextIdFromParts(this.parts)
+    updateRingEnvelopes(this.parts)
   }
 
   clearParts(): void {
@@ -103,6 +106,7 @@ export class AssemblyState {
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const part = this.parts[i]!
       if (this.symmetryEnabled && part.mirrorOf) continue
+      if (part.envelopedBy) continue
       const def = getPartDefinition(part.typeId)
       if (
         point.x >= part.x &&
@@ -150,6 +154,7 @@ export class AssemblyState {
       this.selectedIds.delete(id)
     }
 
+    updateRingEnvelopes(this.parts)
     return [...toRemove]
   }
 
@@ -209,6 +214,8 @@ export class AssemblyState {
         if (mirror) this.positionMirror(part, mirror, axisX)
       }
     }
+
+    updateRingEnvelopes(this.parts)
   }
 
   setPartPosition(part: PartInstance, x: number, y: number, axisX: number): void {
