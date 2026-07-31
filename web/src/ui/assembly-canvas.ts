@@ -24,6 +24,8 @@ export interface AssemblyCanvasOptions {
   onPartPicked?: (partId: string) => void
   getLaunchTargetIds?: () => Set<string>
   onAssemblyChange?: () => void
+  recycleZone?: HTMLElement
+  onPartsRecycled?: (partIds: string[]) => void
 }
 
 export class AssemblyCanvas {
@@ -242,9 +244,26 @@ export class AssemblyCanvas {
   private onPointerUp = (e: PointerEvent): void => {
     if (this.drag.mode === 'move') {
       if (this.drag.moved) {
-        const ids = [...this.state.getSelectedIds()]
-        this.state.finalizeMove(ids, this.getAxisX())
-        this.options.onAssemblyChange?.()
+        const recycleZone = this.options.recycleZone
+        const overRecycle =
+          recycleZone !== undefined &&
+          this.isPointerOver(recycleZone, e.clientX, e.clientY)
+
+        if (overRecycle) {
+          const ids = [...this.state.getSelectedIds()].filter((id) => {
+            const part = this.state.getPartById(id)
+            return part && !part.mirrorOf
+          })
+          const removed = this.state.removeParts(ids)
+          if (removed.length > 0) {
+            this.options.onPartsRecycled?.(removed)
+            this.options.onAssemblyChange?.()
+          }
+        } else {
+          const ids = [...this.state.getSelectedIds()]
+          this.state.finalizeMove(ids, this.getAxisX())
+          this.options.onAssemblyChange?.()
+        }
       } else if (!this.drag.moved && this.drag.wasSelectedOnDown && this.drag.hitId) {
         this.state.toggleSelection(this.drag.hitId)
       }
@@ -259,6 +278,16 @@ export class AssemblyCanvas {
       moved: false,
       wasSelectedOnDown: false,
     }
+  }
+
+  private isPointerOver(el: HTMLElement, clientX: number, clientY: number): boolean {
+    const rect = el.getBoundingClientRect()
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    )
   }
 
   private clientToCanvas(clientX: number, clientY: number): PointerPosition {

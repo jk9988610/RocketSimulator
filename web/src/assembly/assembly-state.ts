@@ -128,6 +128,31 @@ export class AssemblyState {
     this.selectedIds.clear()
   }
 
+  removeParts(ids: string[]): string[] {
+    const toRemove = new Set<string>()
+
+    for (const id of ids) {
+      const part = this.getPartById(id)
+      if (!part) continue
+
+      toRemove.add(part.id)
+
+      if (part.mirrorOf) continue
+
+      const mirror = this.getMirror(part)
+      if (mirror) toRemove.add(mirror.id)
+    }
+
+    if (toRemove.size === 0) return []
+
+    this.parts = this.parts.filter((p) => !toRemove.has(p.id))
+    for (const id of toRemove) {
+      this.selectedIds.delete(id)
+    }
+
+    return [...toRemove]
+  }
+
   getSelectedParts(): PartInstance[] {
     return this.parts.filter((p) => this.selectedIds.has(p.id))
   }

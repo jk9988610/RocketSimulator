@@ -88,6 +88,31 @@ body {
   flex: 1;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  scrollbar-width: auto;
+  scrollbar-color: rgba(255, 255, 255, 0.35) rgba(255, 255, 255, 0.06);
+}
+
+.parts-inventory::-webkit-scrollbar {
+  width: 32px;
+}
+
+.parts-inventory::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  margin: 4px 0;
+}
+
+.parts-inventory::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 16px;
+  border: 6px solid transparent;
+  background-clip: padding-box;
+}
+
+.parts-inventory::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.42);
+  border: 6px solid transparent;
+  background-clip: padding-box;
 }
 
 .inventory-item {
