@@ -83,7 +83,17 @@ export function createLayout(root: HTMLElement): LayoutElements {
         <span class="warp-label" id="warp-label">1×</span>
         <button type="button" class="warp-btn" id="warp-faster" title="加速">+</button>
       </div>
-      <div id="fuel-bars" class="fuel-bars"></div>
+      <div class="resource-bars">
+        <div id="temp-bar-wrap" class="temp-bar-wrap temp-bar-wrap--hidden">
+          <div class="temp-bar">
+            <span class="temp-bar__label">温度</span>
+            <div class="temp-bar__track">
+              <div id="temp-bar-fill" class="temp-bar__fill"></div>
+            </div>
+          </div>
+        </div>
+        <div id="fuel-bars" class="fuel-bars"></div>
+      </div>
       <div id="flight-hud" class="flight-hud">
         <button type="button" class="tilt-btn" id="tilt-left" aria-label="左倾">←</button>
         <div class="flight-hud__readout">
@@ -98,10 +108,6 @@ export function createLayout(root: HTMLElement): LayoutElements {
           <div class="flight-hud__row">
             <span class="flight-hud__key">垂直速度</span>
             <span class="flight-hud__val" id="hud-vvel">0.0 m/s</span>
-          </div>
-          <div class="flight-hud__row">
-            <span class="flight-hud__key">降落伞</span>
-            <span class="flight-hud__val" id="hud-chute">未展开</span>
           </div>
         </div>
         <button type="button" class="tilt-btn" id="tilt-right" aria-label="右倾">→</button>
