@@ -38,6 +38,23 @@ RocketSimulator/
 └── supabase/      # 数据库迁移（后期）
 ```
 
+## 本地开发
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+浏览器访问 `http://localhost:5173/RocketSimulator/`（注意 base 路径）。
+
+## 在线预览
+
+GitHub Pages 部署后访问：`https://jk9988610.github.io/RocketSimulator/`
+
+> 首次需在仓库 Settings → Pages 中选择 **GitHub Actions** 作为来源。
+
 ## 状态
 
-项目处于规划阶段。下一步：初始化 `web/` 工程，实现横屏组装区骨架（里程碑 M0）。
+- [x] M0：横屏布局骨架 + Pages CI
+- [ ] M1：部件拖放与组装
