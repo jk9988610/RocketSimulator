@@ -19,9 +19,6 @@ export function drawPart(
   }
 
   switch (part.typeId) {
-    case 'frustum':
-      drawFrustum(ctx, x, y, w, h, color, accent)
-      break
     case 'command-pod':
       drawCommandPod(ctx, x, y, w, h, color, accent)
       break
@@ -49,28 +46,6 @@ export function drawPart(
   }
 
   ctx.restore()
-}
-
-function drawFrustum(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  color: string,
-  accent: string,
-): void {
-  ctx.fillStyle = color
-  ctx.beginPath()
-  ctx.moveTo(x + w * 0.2, y)
-  ctx.lineTo(x + w * 0.8, y)
-  ctx.lineTo(x + w, y + h)
-  ctx.lineTo(x, y + h)
-  ctx.closePath()
-  ctx.fill()
-  ctx.strokeStyle = accent
-  ctx.lineWidth = 1
-  ctx.stroke()
 }
 
 function drawCommandPod(

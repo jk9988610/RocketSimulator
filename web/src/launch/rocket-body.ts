@@ -20,7 +20,6 @@ export interface RocketBounds {
 }
 
 const PART_MASS: Record<PartTypeId, number> = {
-  frustum: 800,
   'command-pod': 1200,
   parachute: 150,
   'heat-shield': 200,

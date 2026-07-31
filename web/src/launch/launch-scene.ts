@@ -11,6 +11,8 @@ import {
   FlightRocket,
   getActiveStageEngineIds,
 } from './rocket-body'
+import { drawMapView, type ViewMode } from './map-renderer'
+import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
 
 export class LaunchScene {
@@ -20,6 +22,11 @@ export class LaunchScene {
   private rocket: FlightRocket
   private flight: FlightState
   private readonly stageRunner = new StageRunner()
+  private readonly orbitTracker = new OrbitTracker()
+
+  private viewMode: ViewMode = 'live'
+  private padCenterX = 0
+  private padSurfaceY = 0
 
   private engineOn = false
   private throttle = 0
@@ -85,6 +92,8 @@ export class LaunchScene {
 
     const padSurfaceY = rect.height * 0.72
     const padCenterX = rect.width / 2
+    this.padCenterX = padCenterX
+    this.padSurfaceY = padSurfaceY
     this.flight = createInitialFlightState(padCenterX, padSurfaceY, this.rocket)
   }
 
@@ -99,6 +108,7 @@ export class LaunchScene {
     const sequenceView = this.container.querySelector<HTMLButtonElement>('#sequence-view-btn')!
     const sequencePanel = this.container.querySelector<HTMLElement>('#sequence-readout')!
     const backBtn = this.container.querySelector<HTMLButtonElement>('#back-to-assembly')!
+    const mapToggle = this.container.querySelector<HTMLButtonElement>('#map-toggle')!
 
     engineSwitch.addEventListener('click', () => {
       this.engineOn = !this.engineOn
@@ -129,6 +139,12 @@ export class LaunchScene {
     backBtn.addEventListener('click', () => {
       this.stop()
       this.onBack()
+    })
+
+    mapToggle.addEventListener('click', () => {
+      this.viewMode = this.viewMode === 'live' ? 'map' : 'live'
+      mapToggle.textContent = this.viewMode === 'live' ? '现场' : '地图'
+      mapToggle.classList.toggle('active', this.viewMode === 'map')
     })
 
     const bindTilt = (id: string, prop: 'tiltLeft' | 'tiltRight') => {
@@ -189,7 +205,7 @@ export class LaunchScene {
     this.canvas.addEventListener(
       'touchmove',
       (e) => {
-        if (e.touches.length === 2) {
+        if (e.touches.length === 2 && this.viewMode === 'live') {
           e.preventDefault()
           const dist = Math.hypot(
             e.touches[0]!.clientX - e.touches[1]!.clientX,
@@ -243,11 +259,27 @@ export class LaunchScene {
 
     if (this.statusTimer > 0) this.statusTimer -= dt
 
+    this.orbitTracker.record(this.flight, this.padCenterX, this.padSurfaceY)
+
     this.draw(width, height, padSurfaceY)
     this.rafId = requestAnimationFrame(() => this.loop())
   }
 
   private draw(width: number, height: number, padSurfaceY: number): void {
+    if (this.viewMode === 'map') {
+      drawMapView(
+        this.ctx,
+        width,
+        height,
+        this.orbitTracker,
+        this.flight,
+        this.padCenterX,
+        padSurfaceY,
+        this.flight.angle,
+      )
+      return
+    }
+
     const sky = this.ctx.createLinearGradient(0, 0, 0, height)
     sky.addColorStop(0, '#0a1628')
     sky.addColorStop(0.55, '#1a3a5c')
