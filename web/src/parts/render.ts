@@ -367,12 +367,12 @@ function drawRingConnector(
   physical = false,
 ): void {
   if (extended) {
-    const bandH = Math.min(14, h * 0.12)
-    const topBandY = y + bandH * 0.35
-    const botBandY = y + h - bandH * 1.35
+    const bandH = Math.min(14, Math.max(8, h * 0.1))
+    const topBandY = y
+    const botBandY = y + h - bandH
 
     ctx.fillStyle = 'rgba(70, 72, 82, 0.55)'
-    ctx.fillRect(x, y + bandH, w, h - bandH * 2)
+    ctx.fillRect(x, y + bandH, w, Math.max(0, h - bandH * 2))
 
     ctx.fillStyle = color
     ctx.fillRect(x, topBandY, w, bandH)

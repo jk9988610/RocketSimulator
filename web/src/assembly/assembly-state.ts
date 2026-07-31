@@ -1,7 +1,7 @@
 import { findSnapPair } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
-import { updateRingEnvelopes } from './ring-envelope'
+import { updateRingEnvelopes, collapseRingConnector } from './ring-envelope'
 
 let nextId = 1
 
@@ -191,6 +191,10 @@ export class AssemblyState {
 
     for (const part of this.parts) {
       if (!idSet.has(part.id) || moved.has(part.id)) continue
+
+      if (part.typeId === 'ring-connector' && !part.mirrorOf) {
+        collapseRingConnector(part, this.parts)
+      }
 
       part.x += dx
       part.y += dy
