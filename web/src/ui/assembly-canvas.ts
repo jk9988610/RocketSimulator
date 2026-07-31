@@ -1,7 +1,7 @@
 import { AssemblyState } from '../assembly/assembly-state'
 import { isLaunchTargetType } from '../assembly/launch-sequence'
 import { findSnapPair, getConnectorsForPart } from '../parts/connection-points'
-import { GRID_SIZE, snapPoint } from '../assembly/grid'
+import { GRID_SIZE } from '../assembly/grid'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
@@ -505,15 +505,11 @@ export class AssemblyCanvas {
 
     if (this.drag.mode === 'place' && this.drag.partTypeId && this.ghostPosition && this.drag.moved) {
       const def = getPartDefinition(this.drag.partTypeId)
-      const snapped = snapPoint(
-        this.ghostPosition.x - def.width / 2,
-        this.ghostPosition.y - def.height / 2,
-      )
       const fake: PartInstance = {
         id: '_mirror',
         typeId: this.drag.partTypeId,
-        x: snapped.x,
-        y: snapped.y,
+        x: this.ghostPosition.x - def.width / 2,
+        y: this.ghostPosition.y - def.height / 2,
       }
       const pos = this.state.getMirrorPreviewPosition(fake, axisX)
       if (pos) {
@@ -640,11 +636,18 @@ export class AssemblyCanvas {
 
   private drawGhost(typeId: PartTypeId, pointer: PointerPosition): void {
     const def = getPartDefinition(typeId)
-    const snapped = snapPoint(pointer.x - def.width / 2, pointer.y - def.height / 2)
     this.ctx.globalAlpha = 0.45
-    drawPart(this.ctx, { id: 'ghost', typeId, x: snapped.x, y: snapped.y }, false, {
-      physical: true,
-    })
+    drawPart(
+      this.ctx,
+      {
+        id: 'ghost',
+        typeId,
+        x: pointer.x - def.width / 2,
+        y: pointer.y - def.height / 2,
+      },
+      false,
+      { physical: true },
+    )
     this.ctx.globalAlpha = 1
   }
 }

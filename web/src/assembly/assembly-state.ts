@@ -1,7 +1,6 @@
 import { findSnapPair } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
-import { snapPoint, snapToGrid } from './grid'
 import { updateRingEnvelopes } from './ring-envelope'
 
 let nextId = 1
@@ -62,18 +61,17 @@ export class AssemblyState {
     const centerX = part.x + def.width / 2
     const mirrorCenterX = 2 * axisX - centerX
     return {
-      x: snapToGrid(mirrorCenterX - def.width / 2),
+      x: mirrorCenterX - def.width / 2,
       y: part.y,
     }
   }
 
   addPart(typeId: PartTypeId, x: number, y: number, axisX: number): PartInstance {
-    const snapped = snapPoint(x, y)
     const part: PartInstance = {
       id: createId(),
       typeId,
-      x: snapped.x,
-      y: snapped.y,
+      x,
+      y,
     }
     this.parts.push(part)
 
@@ -226,10 +224,6 @@ export class AssemblyState {
       if (pair) {
         part.x += pair.dx
         part.y += pair.dy
-      } else {
-        const snapped = snapPoint(part.x, part.y)
-        part.x = snapped.x
-        part.y = snapped.y
       }
 
       if (this.symmetryEnabled) {
@@ -241,9 +235,8 @@ export class AssemblyState {
   }
 
   setPartPosition(part: PartInstance, x: number, y: number, axisX: number): void {
-    const snapped = snapPoint(x, y)
-    part.x = snapped.x
-    part.y = snapped.y
+    part.x = x
+    part.y = y
 
     if (this.symmetryEnabled) {
       const mirror = this.getMirror(part)
@@ -260,7 +253,7 @@ export class AssemblyState {
     const mirror: PartInstance = {
       id: createId(),
       typeId: source.typeId,
-      x: snapToGrid(mirrorCenterX - def.width / 2),
+      x: mirrorCenterX - def.width / 2,
       y: source.y,
       mirrorOf: source.id,
     }
@@ -282,7 +275,7 @@ export class AssemblyState {
     const def = getPartDefinition(source.typeId)
     const centerX = source.x + def.width / 2
     const mirrorCenterX = 2 * axisX - centerX
-    mirror.x = snapToGrid(mirrorCenterX - def.width / 2)
+    mirror.x = mirrorCenterX - def.width / 2
     mirror.y = source.y
   }
 

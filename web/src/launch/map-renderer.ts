@@ -179,6 +179,25 @@ export function drawMapView(
   })
 
   const samples = tracker.getSamples()
+  const predicted = tracker.getPredictedOrbitPath(flight)
+  if (predicted && predicted.length > 2) {
+    ctx.strokeStyle = 'rgba(120, 220, 160, 0.55)'
+    ctx.lineWidth = 1.8 / zoom
+    ctx.setLineDash([6 / zoom, 5 / zoom])
+    ctx.beginPath()
+    for (let i = 0; i < predicted.length; i++) {
+      const s = predicted[i]!
+      const rKm = EARTH_RADIUS_KM + s.altKm
+      const theta = Math.atan2(s.horizKm, rKm)
+      const x = kmToMapUnits(rKm * Math.sin(theta))
+      const y = -kmToMapUnits(rKm * Math.cos(theta))
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
   if (samples.length > 1) {
     ctx.strokeStyle = 'rgba(59, 158, 255, 0.7)'
     ctx.lineWidth = 1.5 / zoom
@@ -195,7 +214,7 @@ export function drawMapView(
     ctx.stroke()
   }
 
-  const apo = tracker.getApoapsis()
+  const apo = tracker.getApoapsis(flight)
   const peri = tracker.getPeriapsis(flight)
   if (apo) drawOrbitMarker(ctx, apo, zoom)
   if (peri) drawOrbitMarker(ctx, peri, zoom)

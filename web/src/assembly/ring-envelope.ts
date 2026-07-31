@@ -1,8 +1,8 @@
 import { getPartDefinition } from '../parts/definitions'
 import type { PartInstance } from '../parts/types'
 
-const ENVELOPABLE_TYPES = new Set(['heat-shield', 'engine'])
 const ANCHOR_TYPES = new Set(['command-pod', 'fuel-tank'])
+const SNAP_TOL = 4
 
 function partCenterX(part: PartInstance): number {
   const def = getPartDefinition(part.typeId)
@@ -12,6 +12,11 @@ function partCenterX(part: PartInstance): number {
 function partBottom(part: PartInstance): number {
   const def = getPartDefinition(part.typeId)
   return part.y + def.height
+}
+
+function touchesRingTop(part: PartInstance, ringTop: number): boolean {
+  const bottom = partBottom(part)
+  return bottom >= ringTop - SNAP_TOL && bottom <= ringTop + SNAP_TOL
 }
 
 function partsOverlapColumn(a: PartInstance, b: PartInstance): boolean {
@@ -45,41 +50,41 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
 
   for (const ring of rings) {
     const column = getColumnParts(parts, ring).sort((a, b) => a.y - b.y)
-
-    // 环底端固定在放置位置，只向上延伸包裹，底端仅连接下方物件
+    const ringTop = ring.y
     const ringBottom = ring.y + ringDef.height
 
-    const envelopable = column.filter(
-      (p) =>
-        ENVELOPABLE_TYPES.has(p.typeId) &&
-        p.y < ringBottom &&
-        partBottom(p) <= ringBottom + 2,
-    )
-    if (envelopable.length === 0) continue
-
-    const envTop = Math.min(...envelopable.map((p) => p.y))
-    let spanTop = envTop
-
     const anchors = column.filter((p) => ANCHOR_TYPES.has(p.typeId))
-    for (const anchor of anchors) {
-      const bottom = partBottom(anchor)
-      if (bottom <= ring.y + 2 || bottom <= envTop + 2) {
-        spanTop = Math.min(spanTop, bottom)
+    const anchorsTouching = anchors.filter((a) => touchesRingTop(a, ringTop))
+    const heatTouching = column.filter(
+      (p) => p.typeId === 'heat-shield' && touchesRingTop(p, ringTop),
+    )
+
+    let spanTop = ringTop
+
+    if (heatTouching.length > 0) {
+      spanTop = Math.min(spanTop, ...heatTouching.map((p) => p.y))
+      for (const anchor of anchors) {
+        if (partBottom(anchor) <= spanTop + SNAP_TOL) {
+          spanTop = Math.min(spanTop, partBottom(anchor))
+        }
       }
+    } else if (anchorsTouching.length > 0) {
+      spanTop = Math.min(spanTop, ...anchorsTouching.map((a) => partBottom(a)))
     }
 
-    const spanBottom = ringBottom
-    const span = spanBottom - spanTop
+    const span = ringBottom - spanTop
     if (span < ringDef.height) continue
 
     const ref =
-      anchors.find((a) => partBottom(a) <= envTop + 2) ?? envelopable[0]!
+      anchorsTouching[0] ?? heatTouching[0] ?? ring
     ring.x = partCenterX(ref) - ringDef.width / 2
     ring.y = spanTop
     ring.ringSpan = span
 
-    for (const p of envelopable) {
-      p.envelopedBy = ring.id
+    for (const p of heatTouching) {
+      if (p.y >= spanTop - SNAP_TOL && partBottom(p) <= ringTop + SNAP_TOL) {
+        p.envelopedBy = ring.id
+      }
     }
   }
 }
