@@ -120,9 +120,10 @@ function resolveSpanTopFromEngine(
   return null
 }
 
-/** 拖动环时收起延伸、释放被包裹部件 */
+/** 拖动环时收起延伸、释放被包裹部件（仅首次从延伸态收起） */
 export function collapseRingConnector(ring: PartInstance, parts: PartInstance[]): void {
   if (ring.typeId !== 'ring-connector') return
+  if (ring.ringSpan === undefined) return
 
   for (const p of parts) {
     if (p.envelopedBy === ring.id) delete p.envelopedBy
@@ -134,7 +135,6 @@ export function collapseRingConnector(ring: PartInstance, parts: PartInstance[])
 
   delete ring.ringSpan
   delete ring.ringBottomLy
-  ring.ringPlacementTop = ring.y
 }
 
 /** 环移动并吸附后记录紧凑形态顶端 */
