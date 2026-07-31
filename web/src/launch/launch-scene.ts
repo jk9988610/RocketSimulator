@@ -14,11 +14,18 @@ import {
 import { drawMapView, type ViewMode } from './map-renderer'
 import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
+import {
+  altitudeMeters,
+  evaluateLanding,
+  landingMessage,
+  type LandingResult,
+} from './landing'
+import { PX_PER_METER } from './flight-physics'
 
 const WORLD_PAD_Y = 0
 const WORLD_PAD_X = 0
-const CAMERA_Y_OFFSET = -100
-const CAMERA_SMOOTH = 0.12
+/** 火箭在画面中的垂直偏移（负值 = 略高于中心，留出下方视野） */
+const CAMERA_Y_OFFSET = -90
 
 export class LaunchScene {
   private readonly canvas: HTMLCanvasElement
@@ -46,6 +53,9 @@ export class LaunchScene {
   private statusTimer = 0
   private sequencePanelVisible = false
   private sequencePanel: HTMLElement | null = null
+  private maxAltM = 0
+  private prevGrounded = true
+  private landingResult: LandingResult = 'none'
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -69,6 +79,8 @@ export class LaunchScene {
     this.canvas = canvas
     this.ctx = ctx
     this.flight = createInitialFlightState(WORLD_PAD_X, WORLD_PAD_Y, rocket)
+    this.cameraX = WORLD_PAD_X
+    this.cameraY = WORLD_PAD_Y + CAMERA_Y_OFFSET
   }
 
   start(): void {
@@ -205,9 +217,9 @@ export class LaunchScene {
     `
   }
 
-  private showStatus(msg: string): void {
+  private showStatus(msg: string, duration = 2): void {
     this.statusMessage = msg
-    this.statusTimer = 2
+    this.statusTimer = duration
   }
 
   private bindPinchZoom(): void {
@@ -244,6 +256,7 @@ export class LaunchScene {
     const width = this.canvas.clientWidth
     const height = this.canvas.clientHeight
     const grounded = this.flight.y >= WORLD_PAD_Y - 1
+    const prevVy = this.flight.vy
 
     if (grounded) {
       this.flight.y = WORLD_PAD_Y
@@ -267,8 +280,25 @@ export class LaunchScene {
 
     if (this.statusTimer > 0) this.statusTimer -= dt
 
-    this.cameraX += (this.flight.x - this.cameraX) * CAMERA_SMOOTH
-    this.cameraY += (this.flight.y + CAMERA_Y_OFFSET - this.cameraY) * CAMERA_SMOOTH
+    const altM = altitudeMeters(this.flight, WORLD_PAD_Y, PX_PER_METER)
+    this.maxAltM = Math.max(this.maxAltM, altM)
+
+    if (grounded && !this.prevGrounded && this.landingResult === 'none') {
+      const impactSpeed = Math.abs(prevVy)
+      const result = evaluateLanding(this.rocket, impactSpeed, this.maxAltM)
+      if (result !== 'none') {
+        this.landingResult = result
+        this.showStatus(
+          landingMessage(result, this.rocket.hasParachuteDeployed()),
+          result === 'success' ? 6 : 5,
+        )
+      }
+    }
+    this.prevGrounded = grounded
+
+    // 相机锁定火箭，无延迟跟随
+    this.cameraX = this.flight.x
+    this.cameraY = this.flight.y + CAMERA_Y_OFFSET
 
     this.orbitTracker.record(this.flight, WORLD_PAD_X, WORLD_PAD_Y)
 
@@ -321,15 +351,14 @@ export class LaunchScene {
         this.drawEngineFlame(part)
       }
       if (part.parachuteDeployed && part.typeId === 'parachute') {
-        this.ctx.strokeStyle = 'rgba(255, 120, 120, 0.6)'
-        this.ctx.lineWidth = 2
-        const def = getPartDefinition(part.typeId)
-        this.ctx.strokeRect(part.x, part.y - 6, def.width, def.height + 6)
+        this.drawDeployedParachute(part)
       }
     }
 
     this.ctx.restore()
     this.ctx.restore()
+
+    this.drawLandingOverlay(width, height)
 
     if (this.statusTimer > 0 && this.statusMessage) {
       this.ctx.fillStyle = 'rgba(0,0,0,0.6)'
@@ -394,5 +423,59 @@ export class LaunchScene {
     this.ctx.lineTo(fx + 8, fy)
     this.ctx.closePath()
     this.ctx.fill()
+  }
+
+  private drawDeployedParachute(part: import('./rocket-body').FlightPartState): void {
+    const def = getPartDefinition(part.typeId)
+    const cx = part.x + def.width / 2
+    const baseY = part.y + def.height
+    const expandR = def.width * 1.35
+    const canopyR = expandR * 0.72
+
+    this.ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    this.ctx.lineWidth = 1
+    for (let i = -2; i <= 2; i++) {
+      this.ctx.beginPath()
+      this.ctx.moveTo(cx + i * 8, baseY - 4)
+      this.ctx.lineTo(cx + i * expandR * 0.22, baseY - canopyR * 0.55)
+      this.ctx.stroke()
+    }
+
+    this.ctx.fillStyle = 'rgba(255, 90, 90, 0.75)'
+    this.ctx.strokeStyle = '#cc4444'
+    this.ctx.lineWidth = 2
+    this.ctx.beginPath()
+    this.ctx.arc(cx, baseY, expandR, Math.PI, 0)
+    this.ctx.closePath()
+    this.ctx.fill()
+    this.ctx.stroke()
+
+    this.ctx.fillStyle = 'rgba(255, 180, 180, 0.4)'
+    this.ctx.beginPath()
+    this.ctx.arc(cx, baseY, canopyR, Math.PI, 0)
+    this.ctx.closePath()
+    this.ctx.fill()
+  }
+
+  private drawLandingOverlay(width: number, height: number): void {
+    if (this.landingResult === 'none') return
+
+    const isSuccess = this.landingResult === 'success'
+    this.ctx.fillStyle = isSuccess ? 'rgba(40, 120, 70, 0.85)' : 'rgba(140, 40, 40, 0.85)'
+    this.ctx.fillRect(width / 2 - 130, height / 2 - 28, 260, 56)
+    this.ctx.strokeStyle = isSuccess ? '#50dc78' : '#ff6b6b'
+    this.ctx.lineWidth = 2
+    this.ctx.strokeRect(width / 2 - 130, height / 2 - 28, 260, 56)
+    this.ctx.fillStyle = '#fff'
+    this.ctx.font = 'bold 15px system-ui'
+    this.ctx.textAlign = 'center'
+    this.ctx.fillText(
+      isSuccess ? '任务成功' : '任务失败',
+      width / 2,
+      height / 2 - 6,
+    )
+    this.ctx.font = '12px system-ui'
+    this.ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    this.ctx.fillText(this.statusMessage, width / 2, height / 2 + 14)
   }
 }
