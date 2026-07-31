@@ -198,10 +198,11 @@ export class AssemblyState {
       if (pair) {
         part.x += pair.dx
         part.y += pair.dy
+      } else {
+        const snapped = snapPoint(part.x, part.y)
+        part.x = snapped.x
+        part.y = snapped.y
       }
-      const snapped = snapPoint(part.x, part.y)
-      part.x = snapped.x
-      part.y = snapped.y
 
       if (this.symmetryEnabled) {
         const mirror = this.getMirror(part)

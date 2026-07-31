@@ -106,7 +106,7 @@ export function getConnectorsForPart(part: PartInstance): WorldConnector[] {
 export function findSnapPair(
   moving: PartInstance,
   others: readonly PartInstance[],
-  threshold = 28,
+  threshold = 36,
 ): { dx: number; dy: number } | null {
   const movingConnectors = getConnectorsForPart(moving)
   let best: { dx: number; dy: number; dist: number } | null = null

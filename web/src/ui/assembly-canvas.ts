@@ -5,6 +5,7 @@ import { findSnapPair, getConnectorsForPart } from '../parts/connection-points'
 import { getPartDefinition } from '../parts/definitions'
 import { drawPart } from '../parts/render'
 import type { PartInstance, PartTypeId, PointerPosition } from '../parts/types'
+import { DragGhost } from './drag-ghost'
 
 type DragMode = 'none' | 'move' | 'place'
 
@@ -45,6 +46,7 @@ export class AssemblyCanvas {
   private ghostPosition: PointerPosition | null = null
   private interactionMode: InteractionMode = 'assembly'
   private readonly options: AssemblyCanvasOptions
+  private readonly moveGhost = new DragGhost()
 
   constructor(
     container: HTMLElement,
@@ -235,6 +237,13 @@ export class AssemblyCanvas {
         this.state.moveParts(ids, dx, dy, this.getAxisX())
         this.drag.lastPointer = pointer
         this.drag.moved = true
+
+        const hit = this.drag.hitId ? this.state.getPartById(this.drag.hitId) : undefined
+        if (hit) {
+          this.moveGhost.start(hit.typeId)
+          this.moveGhost.move(hit.typeId, e.clientX, e.clientY)
+        }
+
         this.options.onAssemblyChange?.()
         this.draw()
       }
@@ -243,6 +252,8 @@ export class AssemblyCanvas {
 
   private onPointerUp = (e: PointerEvent): void => {
     if (this.drag.mode === 'move') {
+      this.moveGhost.hide()
+
       if (this.drag.moved) {
         const recycleZone = this.options.recycleZone
         const overRecycle =
@@ -316,6 +327,10 @@ export class AssemblyCanvas {
 
       for (const part of this.state.getParts()) {
         const isSelected = this.state.isSelected(part.id)
+        const isFloating =
+          this.drag.mode === 'move' && this.drag.moved && isSelected
+        if (isFloating) continue
+
         const isDragging = this.drag.mode === 'move' && isSelected
         const isLaunchTarget = this.options.getLaunchTargetIds?.().has(part.id) ?? false
         const isEligible =
