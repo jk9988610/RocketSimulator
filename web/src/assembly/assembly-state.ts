@@ -8,6 +8,15 @@ function createId(): string {
   return `part-${nextId++}`
 }
 
+function syncNextIdFromParts(parts: PartInstance[]): void {
+  for (const part of parts) {
+    const match = part.id.match(/^part-(\d+)$/)
+    if (match) {
+      nextId = Math.max(nextId, Number(match[1]) + 1)
+    }
+  }
+}
+
 export class AssemblyState {
   private parts: PartInstance[] = []
   private selectedIds = new Set<string>()
@@ -50,6 +59,41 @@ export class AssemblyState {
     }
 
     return part
+  }
+
+  getPartById(id: string): PartInstance | undefined {
+    return this.parts.find((p) => p.id === id)
+  }
+
+  hitTestAny(point: PointerPosition): PartInstance | null {
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const part = this.parts[i]!
+      const def = getPartDefinition(part.typeId)
+      if (
+        point.x >= part.x &&
+        point.x <= part.x + def.width &&
+        point.y >= part.y &&
+        point.y <= part.y + def.height
+      ) {
+        return part
+      }
+    }
+    return null
+  }
+
+  exportParts(): PartInstance[] {
+    return this.parts.map((p) => ({ ...p }))
+  }
+
+  importParts(parts: PartInstance[]): void {
+    this.parts = parts.map((p) => ({ ...p }))
+    this.selectedIds.clear()
+    syncNextIdFromParts(this.parts)
+  }
+
+  clearParts(): void {
+    this.parts = []
+    this.selectedIds.clear()
   }
 
   hitTest(point: PointerPosition): PartInstance | null {
