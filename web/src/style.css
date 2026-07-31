@@ -500,6 +500,14 @@ body.is-dragging-part .parts-inventory {
   font-variant-numeric: tabular-nums;
 }
 
+.flight-hud__val--warn {
+  color: #ff8a65;
+}
+
+.flight-hud__val--ok {
+  color: #50dc78;
+}
+
 .flight-hud .tilt-btn {
   flex-shrink: 0;
   width: 48px;

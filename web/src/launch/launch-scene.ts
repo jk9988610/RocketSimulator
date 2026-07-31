@@ -11,12 +11,13 @@ import {
   FlightRocket,
   getActiveStageEngineIds,
 } from './rocket-body'
-import { drawMapView, computeMapLayout, panToFocusTarget, type MapFocusTarget, type ViewMode } from './map-renderer'
+import { drawMapView, computeMapLayout, panToFocusTarget, clampMapZoom, type MapFocusTarget, type ViewMode } from './map-renderer'
 import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
 import {
   evaluateLanding,
   landingMessage,
+  needsParachuteAdvisory,
   type LandingResult,
 } from './landing'
 import {
@@ -79,6 +80,7 @@ export class LaunchScene {
   private mapDragging = false
   private mapDragStart = { x: 0, y: 0, panX: 0, panY: 0 }
   private cosmosSimTimeS = 0
+  private parachuteAdvisoryShown = false
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -137,6 +139,7 @@ export class LaunchScene {
     this.statusTimer = 0
     this.statusMessage = ''
     this.cosmosSimTimeS = 0
+    this.parachuteAdvisoryShown = false
     this.updateFuelBars()
     const engineSwitch = this.container.querySelector<HTMLButtonElement>('#engine-switch')
     const throttle = this.container.querySelector<HTMLInputElement>('#throttle')
@@ -228,9 +231,15 @@ export class LaunchScene {
         this.showStatus('启动链已全部执行')
         return
       }
+      const hadParachute = this.rocket.hasParachuteDeployed()
       this.stageRunner.executeStage(next, this.rocket)
       this.handleStageSeparation(next)
-      this.showStatus(`执行启动级 ${next.number}`)
+      const deployedParachute = !hadParachute && this.rocket.hasParachuteDeployed()
+      if (deployedParachute) {
+        this.showStatus('降落伞已展开', 3)
+      } else {
+        this.showStatus(`执行启动级 ${next.number}`)
+      }
       this.updateSequenceReadout(sequencePanel)
     })
 
@@ -363,7 +372,7 @@ export class LaunchScene {
           if (this.viewMode === 'live') {
             this.earthScale = Math.max(0.5, Math.min(3, this.earthScale * ratio))
           } else {
-            this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * ratio))
+            this.applyMapZoom(this.mapZoom * ratio)
           }
         }
         this.lastPinchDist = dist
@@ -382,7 +391,7 @@ export class LaunchScene {
         if (this.viewMode !== 'map') return
         e.preventDefault()
         const factor = e.deltaY > 0 ? 0.9 : 1.1
-        this.mapZoom = Math.max(0.3, Math.min(6, this.mapZoom * factor))
+        this.applyMapZoom(this.mapZoom * factor)
       },
       { passive: false },
     )
@@ -442,6 +451,20 @@ export class LaunchScene {
 
     const altKm = altitudeAboveEarthKm(this.flight)
     const altM = altKm * 1000
+    const verticalSpeedMs = this.flight.vy
+
+    if (
+      needsParachuteAdvisory(
+        altM,
+        verticalSpeedMs,
+        this.rocket.hasParachuteDeployed(),
+        grounded,
+      ) &&
+      !this.parachuteAdvisoryShown
+    ) {
+      this.parachuteAdvisoryShown = true
+      this.showStatus('下降过快 — 请执行降落伞启动级', 4)
+    }
 
     updateFlight(this.flight, this.rocket, dt, {
       throttle: this.throttle,
@@ -466,11 +489,16 @@ export class LaunchScene {
 
     if (grounded && !this.prevGrounded && this.landingResult === 'none') {
       const impactSpeed = Math.abs(prevVy)
-      const result = evaluateLanding(this.rocket, impactSpeed, this.maxAltM)
+      const result = evaluateLanding(
+        this.rocket,
+        impactSpeed,
+        this.maxAltM,
+        this.flight.angle,
+      )
       if (result !== 'none') {
         this.landingResult = result
         this.showStatus(
-          landingMessage(result, this.rocket.hasParachuteDeployed()),
+          landingMessage(result, this.rocket.hasParachuteDeployed(), this.flight.angle),
           result === 'success' ? 6 : 5,
         )
       }
@@ -488,7 +516,7 @@ export class LaunchScene {
     }
 
     this.updateFuelBars()
-    this.updateFlightHud(grounded)
+    this.updateFlightHud(grounded, verticalSpeedMs)
 
     if (this.viewMode === 'map' && this.mapFocusActive && this.mapFocusTarget !== 'free') {
       const layout = computeMapLayout(
@@ -504,7 +532,7 @@ export class LaunchScene {
       this.mapPanY = pan.panY
     }
 
-    this.draw(width, height, altKm)
+    this.draw(width, height, altKm, verticalSpeedMs)
     this.rafId = requestAnimationFrame(() => this.loop())
   }
 
@@ -541,7 +569,7 @@ export class LaunchScene {
     this.rocket.recomputeBounds()
   }
 
-  private draw(width: number, height: number, altKm: number): void {
+  private draw(width: number, height: number, altKm: number, verticalSpeedMs: number): void {
     if (this.viewMode === 'map') {
       drawMapView(
         this.ctx,
@@ -564,6 +592,8 @@ export class LaunchScene {
     sky.addColorStop(1, '#2d6a4f')
     this.ctx.fillStyle = sky
     this.ctx.fillRect(0, 0, width, height)
+
+    this.drawSkyMoon(width, height, altKm)
 
     this.ctx.save()
     this.ctx.translate(width / 2 - this.cameraX, height * 0.58 - this.cameraY)
@@ -599,6 +629,7 @@ export class LaunchScene {
     this.ctx.restore()
 
     this.drawKarmanBanner(width, height, altKm)
+    this.drawDescentWarning(width, height, altKm, verticalSpeedMs)
     this.drawLandingOverlay(width, height)
 
     if (this.statusTimer > 0 && this.statusMessage) {
@@ -739,15 +770,97 @@ export class LaunchScene {
       .join('')
   }
 
-  private updateFlightHud(grounded?: boolean): void {
+  private applyMapZoom(nextZoom: number): void {
+    this.mapZoom = clampMapZoom(nextZoom)
+    if (this.viewMode !== 'map' || !this.mapFocusActive || this.mapFocusTarget === 'free') {
+      return
+    }
+    const layout = computeMapLayout(
+      this.orbitTracker,
+      this.flight,
+      WORLD_PAD_X,
+      WORLD_PAD_Y,
+      this.mapZoom,
+      this.cosmosSimTimeS,
+    )
+    const pan = panToFocusTarget(layout, this.mapFocusTarget, this.mapZoom)
+    this.mapPanX = pan.panX
+    this.mapPanY = pan.panY
+  }
+
+  private updateFlightHud(grounded?: boolean, verticalSpeedMs?: number): void {
     const onGround = grounded ?? this.flight.y >= WORLD_PAD_Y - 1
     const hud = resolveHudReadout(this.flight, onGround, this.cosmosSimTimeS)
+    const vvel = verticalSpeedMs ?? this.flight.vy
     const speedEl = this.container.querySelector<HTMLElement>('#hud-speed')
     const altLabelEl = this.container.querySelector<HTMLElement>('#hud-alt-label')
     const altEl = this.container.querySelector<HTMLElement>('#hud-altitude')
+    const vvelEl = this.container.querySelector<HTMLElement>('#hud-vvel')
+    const chuteEl = this.container.querySelector<HTMLElement>('#hud-chute')
+    const parachute = this.rocket.hasParachuteDeployed()
     if (speedEl) speedEl.textContent = `${hud.speedMs.toFixed(1)} m/s`
     if (altLabelEl) altLabelEl.textContent = hud.distanceLabel
     if (altEl) altEl.textContent = `${hud.distanceKm.toFixed(2)} km`
+    if (vvelEl) {
+      const label = vvel > 0.5 ? '↓' : vvel < -0.5 ? '↑' : ''
+      vvelEl.textContent = `${label}${Math.abs(vvel).toFixed(1)} m/s`
+      vvelEl.classList.toggle('flight-hud__val--warn', vvel > 20 && !parachute && !onGround)
+    }
+    if (chuteEl) {
+      chuteEl.textContent = parachute ? '已展开' : '未展开'
+      chuteEl.classList.toggle('flight-hud__val--ok', parachute)
+    }
+  }
+
+  private drawSkyMoon(width: number, height: number, altKm: number): void {
+    if (altKm < 35) return
+
+    const { moonOrbitAngle } = computeGeocentricState(this.cosmosSimTimeS)
+    const visibility = Math.min(1, (altKm - 35) / 50)
+    const moonR = 10 + Math.min(8, altKm / 40)
+    const moonX = width * (0.52 + Math.cos(moonOrbitAngle) * 0.32)
+    const moonY = height * (0.14 + Math.sin(moonOrbitAngle) * 0.06)
+
+    this.ctx.save()
+    this.ctx.globalAlpha = visibility * 0.9
+    this.ctx.fillStyle = 'rgba(220, 220, 235, 0.25)'
+    this.ctx.beginPath()
+    this.ctx.arc(moonX, moonY, moonR * 1.6, 0, Math.PI * 2)
+    this.ctx.fill()
+    this.ctx.fillStyle = '#c8c8d8'
+    this.ctx.beginPath()
+    this.ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2)
+    this.ctx.fill()
+    this.ctx.fillStyle = 'rgba(200,200,220,0.7)'
+    this.ctx.font = '10px system-ui'
+    this.ctx.textAlign = 'center'
+    this.ctx.fillText('月球', moonX, moonY + moonR + 12)
+    this.ctx.restore()
+  }
+
+  private drawDescentWarning(
+    width: number,
+    _height: number,
+    altKm: number,
+    verticalSpeedMs: number,
+  ): void {
+    if (
+      !needsParachuteAdvisory(
+        altKm * 1000,
+        verticalSpeedMs,
+        this.rocket.hasParachuteDeployed(),
+        this.flight.y >= WORLD_PAD_Y - 1,
+      )
+    ) {
+      return
+    }
+
+    this.ctx.fillStyle = 'rgba(180, 60, 40, 0.88)'
+    this.ctx.fillRect(width / 2 - 120, 38, 240, 22)
+    this.ctx.fillStyle = '#ffe0d0'
+    this.ctx.font = 'bold 11px system-ui'
+    this.ctx.textAlign = 'center'
+    this.ctx.fillText('⚠ 下降过快 — 展开降落伞', width / 2, 53)
   }
 
   private drawKarmanBanner(width: number, _height: number, altKm: number): void {

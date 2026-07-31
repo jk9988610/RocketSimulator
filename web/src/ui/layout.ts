@@ -95,6 +95,14 @@ export function createLayout(root: HTMLElement): LayoutElements {
             <span class="flight-hud__key" id="hud-alt-label">距地面</span>
             <span class="flight-hud__val" id="hud-altitude">0.00 km</span>
           </div>
+          <div class="flight-hud__row">
+            <span class="flight-hud__key">垂直速度</span>
+            <span class="flight-hud__val" id="hud-vvel">0.0 m/s</span>
+          </div>
+          <div class="flight-hud__row">
+            <span class="flight-hud__key">降落伞</span>
+            <span class="flight-hud__val" id="hud-chute">未展开</span>
+          </div>
         </div>
         <button type="button" class="tilt-btn" id="tilt-right" aria-label="右倾">→</button>
       </div>
