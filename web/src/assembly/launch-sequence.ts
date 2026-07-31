@@ -71,6 +71,13 @@ export class LaunchSequenceState {
     return this.stages.find((s) => s.targetPartIds.includes(partId))
   }
 
+  purgeTargets(partIds: readonly string[]): void {
+    const remove = new Set(partIds)
+    for (const stage of this.stages) {
+      stage.targetPartIds = stage.targetPartIds.filter((id) => !remove.has(id))
+    }
+  }
+
   getAllTargetPartIds(): Set<string> {
     const ids = new Set<string>()
     for (const stage of this.stages) {

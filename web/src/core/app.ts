@@ -39,6 +39,11 @@ export function initApp(): void {
 
   const canvas = new AssemblyCanvas(layout.assemblyArea, assemblyState, {
     getLaunchTargetIds: () => launchState.getAllTargetPartIds(),
+    recycleZone: layout.partsView,
+    onPartsRecycled: (partIds) => {
+      launchState.purgeTargets(partIds)
+      launchPanel.render()
+    },
     onAssemblyChange: () => {
       triggerSave()
       updateLaunchButton()
