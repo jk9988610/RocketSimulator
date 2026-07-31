@@ -29,8 +29,8 @@ export const PART_DEFINITIONS: Record<PartTypeId, PartDefinition> = {
   'heat-shield': {
     id: 'heat-shield',
     label: '隔热片',
-    width: 64,
-    height: 16,
+    width: 48,
+    height: 8,
     color: '#8b6914',
     accent: '#c49a1a',
   },

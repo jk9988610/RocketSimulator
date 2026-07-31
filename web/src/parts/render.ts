@@ -149,8 +149,7 @@ function strokePartOutline(
       ctx.stroke()
       break
     case 'heat-shield':
-      ctx.beginPath()
-      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
+      drawHeatShieldOutline(ctx, x, y, w, h)
       ctx.stroke()
       break
     case 'nose-cone':
@@ -298,19 +297,51 @@ function drawHeatShield(
   accent: string,
 ): void {
   ctx.fillStyle = color
-  ctx.beginPath()
-  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
+  heatShieldPath(ctx, x, y, w, h)
   ctx.fill()
+
   ctx.strokeStyle = accent
   ctx.lineWidth = 2
+  heatShieldPath(ctx, x, y, w, h)
   ctx.stroke()
-  for (let i = 0; i < 5; i++) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)'
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 4; i++) {
+    const t = (i + 1) / 5
     ctx.beginPath()
-    ctx.moveTo(x + 8 + i * 10, y + 2)
-    ctx.lineTo(x + 12 + i * 10, y + h - 2)
+    ctx.moveTo(x + w * (0.15 + t * 0.1), y + h * 0.2)
+    ctx.lineTo(x + w * (0.2 + t * 0.1), y + h * 0.8)
     ctx.stroke()
   }
+}
+
+function heatShieldPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const cx = x + w / 2
+  const cy = y + h / 2
+  ctx.beginPath()
+  ctx.moveTo(x, cy)
+  ctx.quadraticCurveTo(x + w * 0.22, y, cx, y)
+  ctx.quadraticCurveTo(x + w * 0.78, y, x + w, cy)
+  ctx.quadraticCurveTo(x + w * 0.78, y + h, cx, y + h)
+  ctx.quadraticCurveTo(x + w * 0.22, y + h, x, cy)
+  ctx.closePath()
+}
+
+function drawHeatShieldOutline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  heatShieldPath(ctx, x, y, w, h)
 }
 
 function drawRingConnector(
