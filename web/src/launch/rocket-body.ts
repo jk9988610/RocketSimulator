@@ -104,10 +104,11 @@ export class FlightRocket {
 
     for (const part of this.parts) {
       const def = getPartDefinition(part.typeId)
+      const h = part.ringSpan ?? def.height
       minX = Math.min(minX, part.x)
       minY = Math.min(minY, part.y)
       maxX = Math.max(maxX, part.x + def.width)
-      maxY = Math.max(maxY, part.y + def.height)
+      maxY = Math.max(maxY, part.y + h)
     }
 
     return {

@@ -326,6 +326,7 @@ export class AssemblyCanvas {
       }
 
       for (const part of this.state.getParts()) {
+        if (part.envelopedBy) continue
         const isSelected = this.state.isSelected(part.id)
         const isFloating =
           this.drag.mode === 'move' && this.drag.moved && isSelected

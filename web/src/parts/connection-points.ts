@@ -35,8 +35,15 @@ function parachuteConnectors(): ConnectorDef[] {
   return [{ kind: 'bottom', lx: w / 2, ly: h }]
 }
 
-function ringConnectorConnectors(): ConnectorDef[] {
+function ringConnectorConnectors(part: PartInstance): ConnectorDef[] {
   const { width, height } = getPartDefinition('ring-connector')
+  const span = part.ringSpan ?? height
+  if (part.ringSpan) {
+    return [
+      { kind: 'top', lx: width / 2, ly: 0 },
+      { kind: 'bottom', lx: width / 2, ly: span },
+    ]
+  }
   const barH = Math.max(10, height * 0.55)
   const barY = (height - barH) / 2
   return [
@@ -48,14 +55,17 @@ function ringConnectorConnectors(): ConnectorDef[] {
 function radialConnectorConnectors(): ConnectorDef[] {
   const { width, height } = getPartDefinition('radial-connector')
   return [
-    { kind: 'top', lx: width / 2, ly: 2 },
-    { kind: 'bottom', lx: width / 2, ly: height - 2 },
+    { kind: 'left', lx: 0, ly: height / 2 },
+    { kind: 'right', lx: width, ly: height / 2 },
   ]
 }
 
 function engineConnectors(): ConnectorDef[] {
-  const { width } = getPartDefinition('engine')
-  return [{ kind: 'top', lx: width / 2, ly: 0 }]
+  const { width, height } = getPartDefinition('engine')
+  return [
+    { kind: 'top', lx: width / 2, ly: 0 },
+    { kind: 'bottom', lx: width / 2, ly: height },
+  ]
 }
 
 function noseConeConnectors(): ConnectorDef[] {
@@ -63,17 +73,21 @@ function noseConeConnectors(): ConnectorDef[] {
   return [{ kind: 'bottom', lx: width / 2, ly: height }]
 }
 
-const CONNECTOR_BUILDERS: Record<PartTypeId, () => ConnectorDef[]> = {
-  'command-pod': commandPodConnectors,
-  parachute: parachuteConnectors,
-  'heat-shield': () => {
-    const { width, height } = getPartDefinition('heat-shield')
-    return [
-      { kind: 'top', lx: width / 2, ly: 0 },
-      { kind: 'bottom', lx: width / 2, ly: height },
-    ]
-  },
-  'ring-connector': ringConnectorConnectors,
+function heatShieldConnectors(): ConnectorDef[] {
+  const { width, height } = getPartDefinition('heat-shield')
+  return [
+    { kind: 'top', lx: width / 2, ly: 0 },
+    { kind: 'bottom', lx: width / 2, ly: height },
+  ]
+}
+
+type ConnectorBuilder = (part: PartInstance) => ConnectorDef[]
+
+const CONNECTOR_BUILDERS: Record<PartTypeId, ConnectorBuilder> = {
+  'command-pod': () => commandPodConnectors(),
+  parachute: () => parachuteConnectors(),
+  'heat-shield': () => heatShieldConnectors(),
+  'ring-connector': (part) => ringConnectorConnectors(part),
   'fuel-tank': () => {
     const { width, height } = getPartDefinition('fuel-tank')
     return [
@@ -81,9 +95,9 @@ const CONNECTOR_BUILDERS: Record<PartTypeId, () => ConnectorDef[]> = {
       { kind: 'bottom', lx: width / 2, ly: height },
     ]
   },
-  'radial-connector': radialConnectorConnectors,
-  'nose-cone': noseConeConnectors,
-  engine: engineConnectors,
+  'radial-connector': () => radialConnectorConnectors(),
+  'nose-cone': () => noseConeConnectors(),
+  engine: () => engineConnectors(),
 }
 
 const OPPOSITE: Record<ConnectorKind, ConnectorKind> = {
@@ -94,7 +108,7 @@ const OPPOSITE: Record<ConnectorKind, ConnectorKind> = {
 }
 
 export function getConnectorsForPart(part: PartInstance): WorldConnector[] {
-  const defs = CONNECTOR_BUILDERS[part.typeId]?.() ?? []
+  const defs = CONNECTOR_BUILDERS[part.typeId]?.(part) ?? []
   return defs.map((c) => ({
     partId: part.id,
     kind: c.kind,
@@ -108,12 +122,15 @@ export function findSnapPair(
   others: readonly PartInstance[],
   threshold = 36,
 ): { dx: number; dy: number } | null {
+  if (moving.envelopedBy) return null
+
   const movingConnectors = getConnectorsForPart(moving)
   let best: { dx: number; dy: number; dist: number } | null = null
 
   for (const mc of movingConnectors) {
     for (const other of others) {
       if (other.id === moving.id || other.mirrorOf === moving.id) continue
+      if (other.envelopedBy) continue
       const otherConnectors = getConnectorsForPart(other)
       for (const oc of otherConnectors) {
         if (OPPOSITE[mc.kind] !== oc.kind) continue
@@ -130,6 +147,5 @@ export function findSnapPair(
   return best ? { dx: best.dx, dy: best.dy } : null
 }
 
-/** 与 render.ts 中指令仓顶边几何一致，供测试/文档引用 */
 export const COMMAND_POD_TOP_Y_RATIO = 0.16
 export { COMMAND_POD_INSET_RATIO }

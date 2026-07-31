@@ -6,6 +6,7 @@ export interface DrawPartOptions {
   selected?: boolean
   showConnectors?: boolean
   highlightConnectors?: boolean
+  ringSpan?: number
 }
 
 export function drawPart(
@@ -17,6 +18,7 @@ export function drawPart(
   drawPartAt(ctx, part.typeId, part.x, part.y, {
     selected,
     ...options,
+    ringSpan: part.ringSpan,
   })
 }
 
@@ -29,6 +31,7 @@ export function drawPartAt(
 ): void {
   const def = getPartDefinition(typeId)
   const { width: w, height: h, color, accent } = def
+  const drawH = options.ringSpan ?? h
   const { selected = false, showConnectors = false, highlightConnectors = false } = options
 
   ctx.save()
@@ -48,7 +51,7 @@ export function drawPartAt(
       drawHeatShield(ctx, x, y, w, h, color, accent)
       break
     case 'ring-connector':
-      drawRingConnector(ctx, x, y, w, h, color, accent)
+      drawRingConnector(ctx, x, y, w, drawH, color, accent, !!options.ringSpan)
       break
     case 'fuel-tank':
       drawFuelTank(ctx, x, y, w, h, color, accent)
@@ -70,16 +73,22 @@ export function drawPartAt(
 
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)'
   ctx.lineWidth = 1.5
-  strokePartOutline(ctx, typeId, x, y, w, h)
+  strokePartOutline(ctx, typeId, x, y, w, drawH)
 
   if (selected) {
     ctx.strokeStyle = '#3b9eff'
     ctx.lineWidth = 2.5
-    ctx.strokeRect(x - 3, y - 3, w + 6, h + 6)
+    ctx.strokeRect(x - 3, y - 3, w + 6, drawH + 6)
   }
 
   if (showConnectors) {
-    const fakePart: PartInstance = { id: '_', typeId, x, y }
+    const fakePart: PartInstance = {
+      id: '_',
+      typeId,
+      x,
+      y,
+      ringSpan: options.ringSpan,
+    }
     for (const c of getConnectorsForPart(fakePart)) {
       ctx.beginPath()
       ctx.arc(c.x, c.y, highlightConnectors ? 5 : 4, 0, Math.PI * 2)
@@ -301,19 +310,9 @@ function drawHeatShield(
   ctx.fill()
 
   ctx.strokeStyle = accent
-  ctx.lineWidth = 2
+  ctx.lineWidth = 1.5
   heatShieldPath(ctx, x, y, w, h)
   ctx.stroke()
-
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)'
-  ctx.lineWidth = 1
-  for (let i = 0; i < 4; i++) {
-    const t = (i + 1) / 5
-    ctx.beginPath()
-    ctx.moveTo(x + w * (0.15 + t * 0.1), y + h * 0.2)
-    ctx.lineTo(x + w * (0.2 + t * 0.1), y + h * 0.8)
-    ctx.stroke()
-  }
 }
 
 function heatShieldPath(
@@ -323,14 +322,14 @@ function heatShieldPath(
   w: number,
   h: number,
 ): void {
+  const inset = w * 0.14
   const cx = x + w / 2
-  const cy = y + h / 2
+  const flatY = y
   ctx.beginPath()
-  ctx.moveTo(x, cy)
-  ctx.quadraticCurveTo(x + w * 0.22, y, cx, y)
-  ctx.quadraticCurveTo(x + w * 0.78, y, x + w, cy)
-  ctx.quadraticCurveTo(x + w * 0.78, y + h, cx, y + h)
-  ctx.quadraticCurveTo(x + w * 0.22, y + h, x, cy)
+  ctx.moveTo(x + inset, flatY)
+  ctx.lineTo(x + w - inset, flatY)
+  ctx.quadraticCurveTo(x + w - inset * 0.3, y + h * 0.85, cx, y + h)
+  ctx.quadraticCurveTo(x + inset * 0.3, y + h * 0.85, x + inset, flatY)
   ctx.closePath()
 }
 
@@ -352,7 +351,33 @@ function drawRingConnector(
   h: number,
   color: string,
   accent: string,
+  extended = false,
 ): void {
+  if (extended) {
+    const pad = 4
+    const innerW = w - pad * 2
+    const bandH = Math.min(14, h * 0.12)
+    const topBandY = y + bandH * 0.35
+    const botBandY = y + h - bandH * 1.35
+
+    ctx.fillStyle = 'rgba(90, 95, 110, 0.35)'
+    ctx.fillRect(x + pad, y + bandH, innerW, h - bandH * 2)
+
+    ctx.fillStyle = color
+    ctx.fillRect(x + pad, topBandY, innerW, bandH)
+    ctx.fillRect(x + pad, botBandY, innerW, bandH)
+
+    ctx.strokeStyle = accent
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + pad, topBandY, innerW, bandH)
+    ctx.strokeRect(x + pad, botBandY, innerW, bandH)
+
+    ctx.strokeStyle = 'rgba(160, 168, 180, 0.45)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + pad + 0.5, y + bandH + 0.5, innerW - 1, h - bandH * 2 - 1)
+    return
+  }
+
   const barH = Math.max(10, h * 0.55)
   const barY = y + (h - barH) / 2
   ctx.fillStyle = color
@@ -395,13 +420,22 @@ function drawRadialConnector(
   color: string,
   accent: string,
 ): void {
-  const barW = Math.max(12, w * 0.55)
+  const barW = Math.max(10, w * 0.42)
+  const barH = Math.max(12, h * 0.55)
   const barX = x + (w - barW) / 2
+  const barY = y + (h - barH) / 2
+  const armW = Math.max(8, w * 0.22)
+
   ctx.fillStyle = color
-  ctx.fillRect(barX, y + 2, barW, h - 4)
+  ctx.fillRect(barX, barY, barW, barH)
+  ctx.fillRect(x, barY + (barH - armW) / 2, armW, armW)
+  ctx.fillRect(x + w - armW, barY + (barH - armW) / 2, armW, armW)
+
   ctx.strokeStyle = accent
   ctx.lineWidth = 2
-  ctx.strokeRect(barX, y + 2, barW, h - 4)
+  ctx.strokeRect(barX, barY, barW, barH)
+  ctx.strokeRect(x, barY + (barH - armW) / 2, armW, armW)
+  ctx.strokeRect(x + w - armW, barY + (barH - armW) / 2, armW, armW)
 }
 
 function drawNoseCone(

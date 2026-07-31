@@ -119,8 +119,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: calc(100% - 40px);
-  max-width: calc(100% - 40px);
+  width: calc(100% - 48px);
+  max-width: calc(100% - 48px);
   padding: 8px 6px 10px;
   border: 1px solid var(--panel-border);
   border-radius: 8px;
@@ -451,6 +451,8 @@ body.is-dragging-part .parts-inventory {
   width: 100%;
   height: 100%;
   touch-action: none;
+  position: relative;
+  z-index: 0;
 }
 
 .back-btn {
@@ -574,14 +576,15 @@ body.is-dragging-part .parts-inventory {
   position: absolute;
   right: 110px;
   bottom: 12px;
-  width: 160px;
-  max-height: 200px;
+  width: 180px;
+  max-height: 220px;
   overflow-y: auto;
   padding: 8px;
   border-radius: 6px;
-  background: rgba(26, 26, 30, 0.92);
+  background: rgba(26, 26, 30, 0.95);
   border: 1px solid var(--panel-border);
-  z-index: 10;
+  z-index: 30;
+  pointer-events: auto;
 }
 
 .sequence-readout--hidden {
@@ -609,6 +612,10 @@ body.is-dragging-part .parts-inventory {
 
 .sequence-readout__item--done {
   color: #50dc78;
+}
+
+.sequence-readout__item--next {
+  color: #ffd23c;
 }
 
 .sequence-readout__targets {

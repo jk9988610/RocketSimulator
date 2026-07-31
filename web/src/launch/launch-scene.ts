@@ -15,6 +15,11 @@ import { drawMapView, type ViewMode } from './map-renderer'
 import { OrbitTracker } from './orbit-tracker'
 import { StageRunner } from './stage-runner'
 
+const WORLD_PAD_Y = 0
+const WORLD_PAD_X = 0
+const CAMERA_Y_OFFSET = -100
+const CAMERA_SMOOTH = 0.12
+
 export class LaunchScene {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
@@ -25,8 +30,8 @@ export class LaunchScene {
   private readonly orbitTracker = new OrbitTracker()
 
   private viewMode: ViewMode = 'live'
-  private padCenterX = 0
-  private padSurfaceY = 0
+  private cameraX = 0
+  private cameraY = CAMERA_Y_OFFSET
 
   private engineOn = false
   private throttle = 0
@@ -39,6 +44,8 @@ export class LaunchScene {
   private running = false
   private statusMessage = ''
   private statusTimer = 0
+  private sequencePanelVisible = false
+  private sequencePanel: HTMLElement | null = null
 
   private readonly launchState: LaunchSequenceState
   private readonly onBack: () => void
@@ -61,10 +68,7 @@ export class LaunchScene {
 
     this.canvas = canvas
     this.ctx = ctx
-
-    const padX = 0
-    const padY = 0
-    this.flight = createInitialFlightState(padX, padY, rocket)
+    this.flight = createInitialFlightState(WORLD_PAD_X, WORLD_PAD_Y, rocket)
   }
 
   start(): void {
@@ -89,12 +93,6 @@ export class LaunchScene {
     this.canvas.style.width = `${rect.width}px`
     this.canvas.style.height = `${rect.height}px`
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-    const padSurfaceY = rect.height * 0.72
-    const padCenterX = rect.width / 2
-    this.padCenterX = padCenterX
-    this.padSurfaceY = padSurfaceY
-    this.flight = createInitialFlightState(padCenterX, padSurfaceY, this.rocket)
   }
 
   handleResize(): void {
@@ -109,6 +107,8 @@ export class LaunchScene {
     const sequencePanel = this.container.querySelector<HTMLElement>('#sequence-readout')!
     const backBtn = this.container.querySelector<HTMLButtonElement>('#back-to-assembly')!
     const mapToggle = this.container.querySelector<HTMLButtonElement>('#map-toggle')!
+
+    this.sequencePanel = sequencePanel
 
     engineSwitch.addEventListener('click', () => {
       this.engineOn = !this.engineOn
@@ -132,7 +132,9 @@ export class LaunchScene {
     })
 
     sequenceView.addEventListener('click', () => {
-      sequencePanel.classList.toggle('sequence-readout--hidden')
+      this.sequencePanelVisible = !this.sequencePanelVisible
+      sequencePanel.classList.toggle('sequence-readout--hidden', !this.sequencePanelVisible)
+      sequenceView.classList.toggle('active', this.sequencePanelVisible)
       this.updateSequenceReadout(sequencePanel)
     })
 
@@ -145,6 +147,11 @@ export class LaunchScene {
       this.viewMode = this.viewMode === 'live' ? 'map' : 'live'
       mapToggle.textContent = this.viewMode === 'live' ? '现场' : '地图'
       mapToggle.classList.toggle('active', this.viewMode === 'map')
+      if (this.viewMode === 'map' && this.sequencePanel) {
+        this.sequencePanel.classList.add('sequence-readout--hidden')
+        this.sequencePanelVisible = false
+        sequenceView.classList.remove('active')
+      }
     })
 
     const bindTilt = (id: string, prop: 'tiltLeft' | 'tiltRight') => {
@@ -179,14 +186,16 @@ export class LaunchScene {
           .sort((a, b) => b.number - a.number)
           .map((stage) => {
             const done = executed.has(stage.number)
+            const next = this.stageRunner.getNextStage(this.launchState.getStages())
+            const isNext = next?.number === stage.number
             const targets = stage.targetPartIds
               .map((id) => this.rocket.getPart(id))
               .filter(Boolean)
               .map((p) => getPartDefinition(p!.typeId).label)
               .join('、') || '无'
             return `
-              <li class="sequence-readout__item ${done ? 'sequence-readout__item--done' : ''}">
-                <span>级 ${stage.number}${done ? ' ✓' : ''}</span>
+              <li class="sequence-readout__item ${done ? 'sequence-readout__item--done' : ''} ${isNext ? 'sequence-readout__item--next' : ''}">
+                <span>级 ${stage.number}${done ? ' ✓' : isNext ? ' →' : ''}</span>
                 <span class="sequence-readout__targets">${targets}</span>
               </li>
             `
@@ -234,11 +243,10 @@ export class LaunchScene {
 
     const width = this.canvas.clientWidth
     const height = this.canvas.clientHeight
-    const padSurfaceY = height * 0.72
-    const grounded = this.flight.y >= padSurfaceY - 1
+    const grounded = this.flight.y >= WORLD_PAD_Y - 1
 
     if (grounded) {
-      this.flight.y = padSurfaceY
+      this.flight.y = WORLD_PAD_Y
       if (this.flight.vy > 0) this.flight.vy = 0
       if (this.flight.vy === 0) this.flight.vx *= 0.92
     }
@@ -259,13 +267,20 @@ export class LaunchScene {
 
     if (this.statusTimer > 0) this.statusTimer -= dt
 
-    this.orbitTracker.record(this.flight, this.padCenterX, this.padSurfaceY)
+    this.cameraX += (this.flight.x - this.cameraX) * CAMERA_SMOOTH
+    this.cameraY += (this.flight.y + CAMERA_Y_OFFSET - this.cameraY) * CAMERA_SMOOTH
 
-    this.draw(width, height, padSurfaceY)
+    this.orbitTracker.record(this.flight, WORLD_PAD_X, WORLD_PAD_Y)
+
+    if (this.sequencePanelVisible && this.sequencePanel) {
+      this.updateSequenceReadout(this.sequencePanel)
+    }
+
+    this.draw(width, height)
     this.rafId = requestAnimationFrame(() => this.loop())
   }
 
-  private draw(width: number, height: number, padSurfaceY: number): void {
+  private draw(width: number, height: number): void {
     if (this.viewMode === 'map') {
       drawMapView(
         this.ctx,
@@ -273,8 +288,8 @@ export class LaunchScene {
         height,
         this.orbitTracker,
         this.flight,
-        this.padCenterX,
-        padSurfaceY,
+        WORLD_PAD_X,
+        WORLD_PAD_Y,
         this.flight.angle,
       )
       return
@@ -287,8 +302,11 @@ export class LaunchScene {
     this.ctx.fillStyle = sky
     this.ctx.fillRect(0, 0, width, height)
 
-    this.drawEarth(width, padSurfaceY)
-    this.drawLaunchPad(width, padSurfaceY)
+    this.ctx.save()
+    this.ctx.translate(width / 2 - this.cameraX, height * 0.58 - this.cameraY)
+
+    this.drawEarth()
+    this.drawLaunchPad()
 
     this.ctx.save()
     this.ctx.translate(this.flight.x, this.flight.y)
@@ -296,9 +314,9 @@ export class LaunchScene {
     this.ctx.translate(-this.rocket.bounds.centerX, -this.rocket.bounds.bottomY)
 
     for (const part of this.rocket.parts) {
-      if (part.detached) continue
+      if (part.detached || part.envelopedBy) continue
       const instance: PartInstance = part
-      drawPart(this.ctx, instance, false)
+      drawPart(this.ctx, instance, false, { ringSpan: part.ringSpan })
       if (part.ignited && part.typeId === 'engine' && this.engineOn && this.throttle > 0) {
         this.drawEngineFlame(part)
       }
@@ -311,6 +329,7 @@ export class LaunchScene {
     }
 
     this.ctx.restore()
+    this.ctx.restore()
 
     if (this.statusTimer > 0 && this.statusMessage) {
       this.ctx.fillStyle = 'rgba(0,0,0,0.6)'
@@ -322,10 +341,10 @@ export class LaunchScene {
     }
   }
 
-  private drawEarth(width: number, padSurfaceY: number): void {
-    const cx = width / 2
-    const earthR = width * 1.2 * this.earthScale
-    const cy = padSurfaceY + earthR - 40
+  private drawEarth(): void {
+    const earthR = 720 * this.earthScale
+    const cx = 0
+    const cy = 280
 
     this.ctx.fillStyle = '#1b4332'
     this.ctx.beginPath()
@@ -339,26 +358,26 @@ export class LaunchScene {
     this.ctx.stroke()
   }
 
-  private drawLaunchPad(width: number, padSurfaceY: number): void {
+  private drawLaunchPad(): void {
     const padW = 180
     const topW = 100
     const h = 36
-    const cx = width / 2
+    const padSurfaceY = WORLD_PAD_Y
 
     this.ctx.fillStyle = '#555568'
     this.ctx.beginPath()
-    this.ctx.moveTo(cx - topW / 2, padSurfaceY)
-    this.ctx.lineTo(cx + topW / 2, padSurfaceY)
-    this.ctx.lineTo(cx + padW / 2, padSurfaceY + h)
-    this.ctx.lineTo(cx - padW / 2, padSurfaceY + h)
+    this.ctx.moveTo(-topW / 2, padSurfaceY)
+    this.ctx.lineTo(topW / 2, padSurfaceY)
+    this.ctx.lineTo(padW / 2, padSurfaceY + h)
+    this.ctx.lineTo(-padW / 2, padSurfaceY + h)
     this.ctx.closePath()
     this.ctx.fill()
 
     this.ctx.strokeStyle = '#888898'
     this.ctx.lineWidth = 2
     this.ctx.beginPath()
-    this.ctx.moveTo(cx - topW / 2, padSurfaceY)
-    this.ctx.lineTo(cx + topW / 2, padSurfaceY)
+    this.ctx.moveTo(-topW / 2, padSurfaceY)
+    this.ctx.lineTo(topW / 2, padSurfaceY)
     this.ctx.stroke()
   }
 
