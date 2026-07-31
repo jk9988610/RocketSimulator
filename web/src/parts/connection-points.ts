@@ -3,6 +3,7 @@ import {
   getCommandPodTopWidth,
   getPartDefinition,
 } from './definitions'
+import { COMMAND_POD_GEOMETRY, RING_GEOMETRY } from './part-geometry'
 import type { PartInstance, PartTypeId } from './types'
 
 export type ConnectorKind = 'top' | 'bottom' | 'left' | 'right'
@@ -22,7 +23,7 @@ export interface WorldConnector {
 
 function commandPodConnectors(): ConnectorDef[] {
   const { width, height } = getPartDefinition('command-pod')
-  const topY = height * 0.16
+  const topY = height * COMMAND_POD_GEOMETRY.topYRatio
   return [
     { kind: 'top', lx: width / 2, ly: topY },
     { kind: 'bottom', lx: width / 2, ly: height },
@@ -39,12 +40,13 @@ function ringConnectorConnectors(part: PartInstance): ConnectorDef[] {
   const { width, height } = getPartDefinition('ring-connector')
   const span = part.ringSpan ?? height
   if (part.ringSpan) {
+    const bottomLy = part.ringBottomLy ?? span
     return [
       { kind: 'top', lx: width / 2, ly: 0 },
-      { kind: 'bottom', lx: width / 2, ly: span },
+      { kind: 'bottom', lx: width / 2, ly: bottomLy },
     ]
   }
-  const barH = Math.max(10, height * 0.55)
+  const barH = Math.max(10, height * RING_GEOMETRY.barHeightRatio)
   const barY = (height - barH) / 2
   return [
     { kind: 'top', lx: width / 2, ly: barY },

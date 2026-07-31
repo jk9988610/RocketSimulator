@@ -1,22 +1,18 @@
 import { getPartDefinition } from '../parts/definitions'
+import {
+  CONNECTOR_ALIGN_TOL,
+  findConnectorPartner,
+  getConnectorWorldY,
+  getPartBounds,
+  RING_GEOMETRY,
+} from '../parts/part-geometry'
 import type { PartInstance } from '../parts/types'
 
 const ANCHOR_TYPES = new Set(['command-pod', 'fuel-tank'])
-const SNAP_TOL = 4
+const ENVELOP_TYPES = new Set(['heat-shield', 'engine'])
 
 function partCenterX(part: PartInstance): number {
-  const def = getPartDefinition(part.typeId)
-  return part.x + def.width / 2
-}
-
-function partBottom(part: PartInstance): number {
-  const def = getPartDefinition(part.typeId)
-  return part.y + def.height
-}
-
-function touchesRingTop(part: PartInstance, ringTop: number): boolean {
-  const bottom = partBottom(part)
-  return bottom >= ringTop - SNAP_TOL && bottom <= ringTop + SNAP_TOL
+  return getPartBounds(part).centerX
 }
 
 function partsOverlapColumn(a: PartInstance, b: PartInstance): boolean {
@@ -38,8 +34,29 @@ function clearEnvelopeState(parts: PartInstance[]): void {
     delete part.envelopedBy
     if (part.typeId === 'ring-connector') {
       delete part.ringSpan
+      delete part.ringBottomLy
     }
   }
+}
+
+function findAnchorAbove(
+  column: readonly PartInstance[],
+  ringTop: number,
+): PartInstance | null {
+  let best: PartInstance | null = null
+  let bestBottom = -Infinity
+
+  for (const part of column) {
+    if (!ANCHOR_TYPES.has(part.typeId)) continue
+    const bottom = getConnectorWorldY(part, 'bottom')
+    if (bottom === null || bottom > ringTop + CONNECTOR_ALIGN_TOL) continue
+    if (bottom > bestBottom) {
+      bestBottom = bottom
+      best = part
+    }
+  }
+
+  return best
 }
 
 export function updateRingEnvelopes(parts: PartInstance[]): void {
@@ -49,40 +66,80 @@ export function updateRingEnvelopes(parts: PartInstance[]): void {
   const rings = parts.filter((p) => p.typeId === 'ring-connector' && !p.mirrorOf)
 
   for (const ring of rings) {
-    const column = getColumnParts(parts, ring).sort((a, b) => a.y - b.y)
-    const ringTop = ring.y
-    const ringBottom = ring.y + ringDef.height
+    const column = getColumnParts(parts, ring)
+    const others = parts.filter((p) => p.id !== ring.id && !p.mirrorOf)
 
-    const anchors = column.filter((p) => ANCHOR_TYPES.has(p.typeId))
-    const anchorsTouching = anchors.filter((a) => touchesRingTop(a, ringTop))
-    const heatTouching = column.filter(
-      (p) => p.typeId === 'heat-shield' && touchesRingTop(p, ringTop),
-    )
+    const placedTop = ring.y
+    const placedBottom = ring.y + ringDef.height
 
-    let spanTop = ringTop
+    const connectedAbove = findConnectorPartner(ring, 'top', others)
+    const connectedBelow = findConnectorPartner(ring, 'bottom', others)
 
-    if (heatTouching.length > 0) {
-      spanTop = Math.min(spanTop, ...heatTouching.map((p) => p.y))
-      for (const anchor of anchors) {
-        if (partBottom(anchor) <= spanTop + SNAP_TOL) {
-          spanTop = Math.min(spanTop, partBottom(anchor))
+    let spanTop = placedTop
+    let spanBottom = placedBottom
+
+    if (connectedAbove) {
+      const aboveBottom = getConnectorWorldY(connectedAbove, 'bottom')
+      if (aboveBottom !== null) spanTop = aboveBottom
+
+      if (connectedAbove.typeId === 'heat-shield') {
+        const anchor = findAnchorAbove(column, spanTop)
+        if (anchor) {
+          const anchorBottom = getConnectorWorldY(anchor, 'bottom')
+          if (anchorBottom !== null) spanTop = anchorBottom
         }
       }
-    } else if (anchorsTouching.length > 0) {
-      spanTop = Math.min(spanTop, ...anchorsTouching.map((a) => partBottom(a)))
+    } else {
+      const heat = column.find(
+        (p) =>
+          p.typeId === 'heat-shield' &&
+          getConnectorWorldY(p, 'bottom') !== null &&
+          Math.abs(getConnectorWorldY(p, 'bottom')! - placedTop) <= CONNECTOR_ALIGN_TOL,
+      )
+      if (heat) {
+        spanTop = heat.y
+        const anchor = findAnchorAbove(column, spanTop)
+        if (anchor) {
+          const anchorBottom = getConnectorWorldY(anchor, 'bottom')
+          if (anchorBottom !== null) spanTop = anchorBottom
+        }
+      } else {
+        const anchor = column.find(
+          (p) =>
+            ANCHOR_TYPES.has(p.typeId) &&
+            getConnectorWorldY(p, 'bottom') !== null &&
+            Math.abs(getConnectorWorldY(p, 'bottom')! - placedTop) <= CONNECTOR_ALIGN_TOL,
+        )
+        if (!anchor) continue
+        spanTop = getConnectorWorldY(anchor, 'bottom')!
+      }
     }
 
-    const span = ringBottom - spanTop
-    if (span < ringDef.height) continue
+    if (connectedBelow?.typeId === 'engine') {
+      const engineBottom = getConnectorWorldY(connectedBelow, 'bottom')
+      const engineTop = getConnectorWorldY(connectedBelow, 'top')
+      if (engineBottom !== null) spanBottom = engineBottom
+      if (engineTop !== null) {
+        ring.ringBottomLy = engineTop - spanTop
+      }
+    }
 
-    const ref =
-      anchorsTouching[0] ?? heatTouching[0] ?? ring
+    const span = spanBottom - spanTop
+    if (span < RING_GEOMETRY.height - 0.5) continue
+
+    const ref = connectedAbove ?? connectedBelow ?? findAnchorAbove(column, spanTop) ?? ring
     ring.x = partCenterX(ref) - ringDef.width / 2
     ring.y = spanTop
     ring.ringSpan = span
 
-    for (const p of heatTouching) {
-      if (p.y >= spanTop - SNAP_TOL && partBottom(p) <= ringTop + SNAP_TOL) {
+    for (const p of column) {
+      if (p.id === ring.id || !ENVELOP_TYPES.has(p.typeId)) continue
+      const bounds = getPartBounds(p)
+      if (bounds.top < spanTop - 0.5 || bounds.bottom > spanBottom + 0.5) continue
+
+      if (p.typeId === 'engine' && connectedBelow?.id === p.id) {
+        p.envelopedBy = ring.id
+      } else if (p.typeId === 'heat-shield') {
         p.envelopedBy = ring.id
       }
     }

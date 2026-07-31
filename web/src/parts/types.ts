@@ -27,6 +27,8 @@ export interface PartInstance {
   envelopedBy?: string
   /** 圆环连接器纵向延伸高度（px） */
   ringSpan?: number
+  /** 圆环底端连接器相对顶部的纵向偏移（默认等于 ringSpan） */
+  ringBottomLy?: number
 }
 
 export interface PointerPosition {
