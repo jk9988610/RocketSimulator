@@ -501,23 +501,6 @@ function drawEngine(
     ctx.lineWidth = 2
     traceEngineShape(ctx, x, y, w, h)
     ctx.stroke()
-
-    const nozzleY = y + h
-    ctx.fillStyle = accent
-    ctx.beginPath()
-    ctx.moveTo(x + w / 2 - 6, nozzleY)
-    ctx.lineTo(x + w / 2, nozzleY + 10)
-    ctx.lineTo(x + w / 2 + 6, nozzleY)
-    ctx.closePath()
-    ctx.fill()
-  } else {
-    ctx.fillStyle = '#3a3a48'
-    ctx.beginPath()
-    ctx.moveTo(x + w / 2 - 4, y + h)
-    ctx.lineTo(x + w / 2, y + h + 5)
-    ctx.lineTo(x + w / 2 + 4, y + h)
-    ctx.closePath()
-    ctx.fill()
   }
 }
 

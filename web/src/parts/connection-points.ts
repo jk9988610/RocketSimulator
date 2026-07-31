@@ -3,7 +3,7 @@ import {
   getCommandPodTopWidth,
   getPartDefinition,
 } from './definitions'
-import { COMMAND_POD_GEOMETRY, RING_GEOMETRY } from './part-geometry'
+import { COMMAND_POD_GEOMETRY } from './part-geometry'
 import type { PartInstance, PartTypeId } from './types'
 
 export type ConnectorKind = 'top' | 'bottom' | 'left' | 'right'
@@ -46,11 +46,9 @@ function ringConnectorConnectors(part: PartInstance): ConnectorDef[] {
       { kind: 'bottom', lx: width / 2, ly: bottomLy },
     ]
   }
-  const barH = Math.max(10, height * RING_GEOMETRY.barHeightRatio)
-  const barY = (height - barH) / 2
   return [
-    { kind: 'top', lx: width / 2, ly: barY },
-    { kind: 'bottom', lx: width / 2, ly: barY + barH },
+    { kind: 'top', lx: width / 2, ly: 0 },
+    { kind: 'bottom', lx: width / 2, ly: height },
   ]
 }
 

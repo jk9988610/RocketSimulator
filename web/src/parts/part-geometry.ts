@@ -2,8 +2,8 @@ import { COMMAND_POD_INSET_RATIO, getPartDefinition } from './definitions'
 import { getConnectorsForPart, type ConnectorKind } from './connection-points'
 import type { PartInstance } from './types'
 
-/** 连接器对齐判定容差（像素） */
-export const CONNECTOR_ALIGN_TOL = 2
+/** 堆叠对齐容差：与磁吸后残余误差一致 */
+export const CONNECTOR_ALIGN_TOL = 3
 
 export interface PartBounds {
   left: number
@@ -16,29 +16,23 @@ export interface PartBounds {
   centerY: number
 }
 
-/** 指令仓几何 */
+/** 指令仓 */
 export const COMMAND_POD_GEOMETRY = {
   topYRatio: 0.16,
   bottomYRatio: 1,
 } as const
 
-/** 引擎：封口倒 Y 形（相对 64×56 包围盒） */
+/** 引擎：简洁梯形（顶窄底宽，64×56） */
 export const ENGINE_GEOMETRY = {
   width: 64,
   height: 56,
-  topBar: { left: 18, right: 46, bottom: 11 },
-  leftOuter: { x: 5, y: 56 },
-  rightOuter: { x: 59, y: 56 },
-  leftInner: { x: 24, y: 52 },
-  rightInner: { x: 40, y: 52 },
-  bottomTip: { x: 32, y: 56 },
+  topInset: 14,
 } as const
 
-/** 圆环连接器默认几何 */
+/** 圆环连接器 */
 export const RING_GEOMETRY = {
   width: 64,
   height: 24,
-  barHeightRatio: 0.55,
 } as const
 
 export function getPartBounds(part: PartInstance): PartBounds {
@@ -62,6 +56,21 @@ export function getPartBounds(part: PartInstance): PartBounds {
 export function getConnectorWorldY(part: PartInstance, kind: ConnectorKind): number | null {
   const connector = getConnectorsForPart(part).find((c) => c.kind === kind)
   return connector?.y ?? null
+}
+
+/** 部件底端连接点 Y（数学定义） */
+export function getPartBottomY(part: PartInstance): number {
+  const y = getConnectorWorldY(part, 'bottom')
+  if (y !== null) return y
+  const def = getPartDefinition(part.typeId)
+  return part.y + (part.ringSpan ?? def.height)
+}
+
+/** 部件顶端连接点 Y（数学定义） */
+export function getPartTopY(part: PartInstance): number {
+  const y = getConnectorWorldY(part, 'top')
+  if (y !== null) return y
+  return part.y
 }
 
 const OPPOSITE: Record<ConnectorKind, ConnectorKind> = {
@@ -95,27 +104,19 @@ export function findConnectorPartner(
   return best?.part ?? null
 }
 
-export function connectorsAligned(
-  partA: PartInstance,
-  kindA: ConnectorKind,
-  partB: PartInstance,
-  kindB: ConnectorKind,
+/** 上方部件底端与下方部件顶端是否贴合 */
+export function isStackedOn(
+  upper: PartInstance,
+  lowerTopY: number,
 ): boolean {
-  const a = getConnectorsForPart(partA).find((c) => c.kind === kindA)
-  const b = getConnectorsForPart(partB).find((c) => c.kind === kindB)
-  if (!a || !b || OPPOSITE[kindA] !== kindB) return false
-  return Math.hypot(a.x - b.x, a.y - b.y) <= CONNECTOR_ALIGN_TOL
-}
-
-export function getCommandPodTopY(partY: number, partHeight: number): number {
-  return partY + partHeight * COMMAND_POD_GEOMETRY.topYRatio
+  return Math.abs(getPartBottomY(upper) - lowerTopY) <= CONNECTOR_ALIGN_TOL
 }
 
 export function getCommandPodBottomY(partY: number, partHeight: number): number {
   return partY + partHeight * COMMAND_POD_GEOMETRY.bottomYRatio
 }
 
-/** 绘制引擎封口倒 Y 轮廓（局部坐标，原点为部件左上角） */
+/** 梯形引擎轮廓 */
 export function traceEngineShape(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -123,22 +124,12 @@ export function traceEngineShape(
   w: number,
   h: number,
 ): void {
-  const sx = w / ENGINE_GEOMETRY.width
-  const sy = h / ENGINE_GEOMETRY.height
-  const g = ENGINE_GEOMETRY
-  const tx = (px: number): number => x + px * sx
-  const ty = (py: number): number => y + py * sy
-
+  const inset = (w / ENGINE_GEOMETRY.width) * ENGINE_GEOMETRY.topInset
   ctx.beginPath()
-  ctx.moveTo(tx(g.topBar.left), ty(0))
-  ctx.lineTo(tx(g.topBar.right), ty(0))
-  ctx.lineTo(tx(g.rightInner.x), ty(g.topBar.bottom))
-  ctx.lineTo(tx(g.rightOuter.x), ty(g.rightOuter.y))
-  ctx.lineTo(tx(g.rightInner.x), ty(g.rightInner.y))
-  ctx.lineTo(tx(g.bottomTip.x), ty(g.bottomTip.y))
-  ctx.lineTo(tx(g.leftInner.x), ty(g.leftInner.y))
-  ctx.lineTo(tx(g.leftOuter.x), ty(g.leftOuter.y))
-  ctx.lineTo(tx(g.leftInner.x), ty(g.topBar.bottom))
+  ctx.moveTo(x + inset, y)
+  ctx.lineTo(x + w - inset, y)
+  ctx.lineTo(x + w, y + h)
+  ctx.lineTo(x, y + h)
   ctx.closePath()
 }
 
