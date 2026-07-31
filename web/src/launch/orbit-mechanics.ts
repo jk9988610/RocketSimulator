@@ -148,3 +148,101 @@ export function resolveSurfaceState(flight: FlightState, grounded: boolean): Sur
     surfaceRef: 'space',
   }
 }
+
+export interface OrbitPathSample {
+  horizKm: number
+  altKm: number
+}
+
+export interface OrbitGeometry {
+  eccentricity: number
+  semiLatusRectumM: number
+  argumentOfPeriapsis: number
+  specificAngularMomentum: number
+}
+
+/** 稳定绕地轨道：近点高于地表，不会再坠地 */
+export function isBoundOrbit(elements: OrbitalElements): boolean {
+  return (
+    !elements.isEscape &&
+    Number.isFinite(elements.apoapsisKm) &&
+    elements.periapsisKm > 2 &&
+    elements.apoapsisKm > elements.periapsisKm + 0.5
+  )
+}
+
+export function computeOrbitGeometry(flight: FlightState): OrbitGeometry | null {
+  const pos = positionFromEarthCenterM(flight)
+  const rMag = Math.hypot(pos.x, pos.y)
+  if (rMag < EARTH_RADIUS_M * 0.5) return null
+
+  const vx = flight.vx
+  const vy = flight.vy
+  const vMag = Math.hypot(vx, vy)
+  const mu = CELESTIAL.earth.mu
+  const h = pos.x * vy - pos.y * vx
+  if (Math.abs(h) < 1) return null
+
+  const rDotV = pos.x * vx + pos.y * vy
+  const eVecX = (vMag * vMag / mu - 1 / rMag) * pos.x - (rDotV / mu) * vx
+  const eVecY = (vMag * vMag / mu - 1 / rMag) * pos.y - (rDotV / mu) * vy
+  const eccentricity = Math.hypot(eVecX, eVecY)
+
+  return {
+    eccentricity,
+    semiLatusRectumM: (h * h) / mu,
+    argumentOfPeriapsis: Math.atan2(eVecY, eVecX),
+    specificAngularMomentum: h,
+  }
+}
+
+function geocentricToOrbitSample(gx: number, gy: number): OrbitPathSample | null {
+  const rKm = Math.hypot(gx, gy) / 1000
+  const altKm = rKm - EARTH_RADIUS_KM
+  if (altKm < 0) return null
+  return { horizKm: gx / 1000, altKm }
+}
+
+/** 由当前位置与速度推算开普勒轨道线（地图用） */
+export function computePredictedOrbitPath(
+  flight: FlightState,
+  pointCount = 160,
+): OrbitPathSample[] | null {
+  const elements = computeOrbitalElements(flight)
+  const geometry = computeOrbitGeometry(flight)
+  if (!elements || !geometry) return null
+
+  const { eccentricity: e, semiLatusRectumM: p, argumentOfPeriapsis: omega } = geometry
+  const samples: OrbitPathSample[] = []
+
+  if (elements.isEscape || e >= 1) {
+    const pos = positionFromEarthCenterM(flight)
+    const currentNu = Math.atan2(pos.y, pos.x) - omega
+    const step = (Math.PI * 0.95) / pointCount
+    for (let i = 0; i <= pointCount; i++) {
+      const nu = currentNu + i * step
+      const denom = 1 + e * Math.cos(nu)
+      if (denom <= 0.02) break
+      const radius = p / denom
+      const gx = radius * Math.cos(nu + omega)
+      const gy = radius * Math.sin(nu + omega)
+      const sample = geocentricToOrbitSample(gx, gy)
+      if (sample) samples.push(sample)
+    }
+    return samples.length > 2 ? samples : null
+  }
+
+  for (let i = 0; i <= pointCount; i++) {
+    const nu = (i / pointCount) * Math.PI * 2
+    const denom = 1 + e * Math.cos(nu)
+    if (denom <= 0.001) continue
+    const radius = p / denom
+    if (radius < EARTH_RADIUS_M * 0.998 && elements.periapsisKm < 2) continue
+    const gx = radius * Math.cos(nu + omega)
+    const gy = radius * Math.sin(nu + omega)
+    const sample = geocentricToOrbitSample(gx, gy)
+    if (sample) samples.push(sample)
+  }
+
+  return samples.length > 2 ? samples : null
+}
